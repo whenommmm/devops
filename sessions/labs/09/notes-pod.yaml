@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: notes-pod
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c", "echo \"written at $(date)\" >> /data/notes.txt; sleep 3600"]
+      volumeMounts:
+        - name: notes-storage
+          mountPath: /data
+  volumes:
+    - name: notes-storage
+      persistentVolumeClaim:
+        claimName: notes-pvc      # the CLAIM, in the same namespace

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lab-worker
+  template:
+    metadata:
+      labels:
+        app: lab-worker
+    spec:
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "worker starting"
+              if [ -z "$QUEUE_URL" ]; then echo "ERROR: QUEUE_URL is not set"; exit 1; fi
+              echo "connected to $QUEUE_URL"
+              sleep 3600

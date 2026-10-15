@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hpa-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hpa-web
+  template:
+    metadata:
+      labels:
+        app: hpa-web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hpa-web
+spec:
+  selector:
+    app: hpa-web
+  ports:
+    - port: 80
+      targetPort: 80

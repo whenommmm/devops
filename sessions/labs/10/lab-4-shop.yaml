@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lab-shop
+  template:
+    metadata:
+      labels:
+        app: lab-shop
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-shop-svc
+spec:
+  selector:
+    app: lab-shopp
+  ports:
+    - port: 80
+      targetPort: 80

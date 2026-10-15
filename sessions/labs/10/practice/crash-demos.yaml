@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-oom
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "tail /dev/zero"]   # endless zero bytes, no line breaks: memory grows to the limit
+      resources:
+        requests:
+          memory: 32Mi
+        limits:
+          memory: 32Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-typo
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "pyhton app.py"]     # a typo (and busybox has no Python anyway)
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-config
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo DB_HOST is $DB_HOST; sleep 3600"]
+      env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: crash-settings              # this ConfigMap doesn't exist yet
+              key: db_host
