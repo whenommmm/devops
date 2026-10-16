@@ -13,7 +13,7 @@ Legend: ✅ covered · 🟡 in progress / partly covered · ⬜ not yet · 📅 
 | 6 | Docker Fundamentals | Containers vs Virtual Machines · Docker Architecture · Docker Images · Docker Containers · Docker Hub · Container Lifecycle | ✅ covered (Oct 11) | Oct 7 S1 |
 | 7 | Docker Images & Dockerfile | Dockerfile · FROM, RUN, COPY · WORKDIR, ENV, EXPOSE · CMD vs ENTRYPOINT · .dockerignore · Multi-stage Builds · Image Optimization | ✅ covered (Oct 12) | Oct 7 S2 |
 | 8 | Docker Networking, Volumes & Compose | Docker Networking · Container-to-Container Communication · Port Mapping · Docker Volumes · Bind Mounts · Docker Compose · Multi-container Application | ✅ covered (Oct 14) | Oct 8 S1 |
-| 9 | Kubernetes Fundamentals | Why Kubernetes? · Kubernetes Architecture · Control Plane & Worker Nodes · API Server · Scheduler · Controller Manager · etcd · kubelet · kubectl | ⬜ | Oct 9 S1 |
+| 9 | Kubernetes Fundamentals | Why Kubernetes? · Kubernetes Architecture · Control Plane & Worker Nodes · API Server · Scheduler · Controller Manager · etcd · kubelet · kubectl | ✅ covered (Oct 15) | Oct 9 S1 |
 | 10 | Pods, ReplicaSets & Deployments | Pods · Pod Lifecycle · Labels & Selectors · ReplicaSets · Deployments · Scaling · Rolling Updates · Rollbacks | ⬜ | Oct 9 S2 |
 | 11 | Kubernetes Networking & Services | Pod Networking · Kubernetes DNS · Service Discovery · ClusterIP · NodePort · LoadBalancer · Service Selectors · port vs targetPort | ⬜ | Oct 10 S1 |
 | 12 | Ingress, ConfigMaps & Secrets | Ingress · Ingress Controller · Host & Path-based Routing · TLS · ConfigMaps · Secrets · Environment Variables | ⬜ | Oct 10 S2 |

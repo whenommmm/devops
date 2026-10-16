@@ -2,13 +2,9 @@
 
 **Time:** ~90–100 min · **Concepts:** 74 → 77 · **Answers:** `MY_ANSWERS.md` or say "CI/CD questions" · **Answer key:** `12_cicd-github-actions_ANSWERS.md`
 
-**Before you start:** today uses your real GitHub account through **`gh`**, the **GitHub CLI** (Command-Line Interface).
-```bash
-gh auth status                     # expect "✓ Logged in…" and Token scopes incl. 'workflow' (lets you push .github/workflows/)
-git --version                      # git 2.x
-python3 --version                  # Python 3.9 or newer
-```
-> ⚠️ Never delete the **`minikube`** or **`localstack`** containers. Today doesn't need Docker or Kubernetes. Text after `#` in commands is a note for you: don't type it (your zsh would pass it on as arguments), or run `setopt interactivecomments` first.
+**Before you start:** today's practical uses **your real GitHub account** through **`gh`**, the **GitHub CLI** (Command-Line Interface): GitHub's own tool for doing GitHub things from the Terminal. `gh auth status` should show `✓ Logged in to github.com …` with Token scopes including `'workflow'` (the permission to push files into `.github/workflows/`); `git --version` should show 2.x, and `python3 --version` 3.9 or newer.
+
+⚠️ Never delete the **`minikube`** or **`localstack`** containers; today doesn't need Docker or Kubernetes. Text after `#` in commands is a note for you: don't type it (your zsh would pass it on as arguments), or run `setopt interactivecomments` first.
 
 ## 🔁 Warm-up (Helm + the weak list)
 **W1.** Release `web` is at revision 5. You run `helm rollback web 3`, then `helm history web`. What is the newest line?
@@ -40,34 +36,45 @@ echo $?
 ## Concept 74 · CI, CD, and the pipeline
 **Words you'll learn:** integration, CI (Continuous Integration), Continuous Delivery, Continuous Deployment, pipeline, stage, trigger, unit test, artifact, smoke test, fail fast, environment (dev / staging / production), promotion, deployment strategy, recreate, rolling update, blue-green, canary, Jenkins, Jenkinsfile, agent, GitLab CI.
 
-**Problem:** five developers merge three weeks of separate work at once: conflicts everywhere, a broken build, and nobody knows whose change did it (**integration hell**; to **integrate** = combine everyone's changes).
-- **CI (Continuous Integration)** = merge small changes into main often, and **every push or PR automatically triggers a build and automated tests** (a **unit test** = a small piece of code that checks one small part, e.g. "does `GET /` return 200?").
-  - ⚠️ **CI DETECTS and REPORTS problems; it never fixes code.** A developer reads the red ❌ log and fixes it.
-  - **Analogy:** a quality-control checkpoint on a factory conveyor belt: faulty items are flagged and sent back, but the inspector repairs nothing.
+### The problem, and CI
+Five developers each work on their own branch for **three weeks**. On "merge day" the branches clash everywhere, the app doesn't even build, and nobody knows whose change broke what. This is called **integration hell** (to **integrate** = to combine everyone's changes into one shared codebase). Releasing is just as risky: someone follows a printed checklist by hand, skips one step, and the site goes down.
 
-| "CD" can mean… | **Continuous Delivery** | **Continuous Deployment** |
+> **CI (Continuous Integration)** = developers **merge small changes into the main branch often**, and **every push or pull request automatically triggers a build and automated tests**. Because each change is small, a break is noticed **within minutes**, and you know **which commit** caused it.
+
+- A **unit test** is a small piece of code that checks one small part of the app, e.g. "does `GET /` return 200?". You'll write some in Concept 77.
+- ⚠️ **CI DETECTS and REPORTS problems; it never fixes code.** It runs the checks and shows a red ❌ with the error, and **a developer** reads the log and fixes it. **Analogy:** a quality-control checkpoint on a factory conveyor belt: a faulty item is flagged and sent back, but the inspector repairs nothing.
+
+### CD: two different things
+After CI, the tested change has to reach users. "CD" can mean either of these, and ⚠️ they differ **only in the last step**:
+
+| | **Continuous Delivery** | **Continuous Deployment** |
 |---|---|---|
-| Every passing change is… | **ready to release** | **released** automatically |
-| Last step (to production) | **a human approves** (⚠️ the only difference) | **automatic**, no human |
+| Every change that passes the pipeline… | is **ready to release** at any moment | **is released**, automatically |
+| The last step (to production) | **a human approves** (clicks a button) | **no human**: it goes out on its own |
 
-- A **pipeline** = an automated sequence of **stages** that every change passes through (like an assembly line), started by a **trigger** (an event such as a push or PR):
-  - `SOURCE (git push) → BUILD (pip install) → TEST (pytest; lint = style checks) → PACKAGE (docker build) → SCAN (security) → PUBLISH (docker push) → DEPLOY (helm upgrade) → VERIFY`
-  - A **smoke test** = a quick "is it alive?" check, e.g. `curl -f …/health`.
-- **Fail fast:** cheap checks first. **Exit codes decide** (shell scripting): 0 = ✅; non-zero = ❌ and every later stage is skipped (like `set -e`). `pytest` exits 0 (all pass), 1 (a test failed), 5 (no tests found).
-- ⚠️ **CI trusts the exit code, not the text:** a script that prints "3 tests FAILED" but ends with `exit 0` is **green**.
-- **Artifact** = a file a pipeline produces and keeps (test report, image, chart). **Build once, deploy many:** the *same* artifact moves (**promotion**) through each **environment**, a separate copy of the app: **dev** (try things) → **staging** (dress rehearsal) → **production** (real users). A **deployment strategy** = how v1 is replaced by v2:
+### The pipeline
+> A **pipeline** is an automated sequence of **stages** that every change passes through, from the push until it's running for users, like an assembly line where each station does one job in order. It's started by a **trigger**: an event such as a push or a PR.
+
+`SOURCE (git push) → BUILD (pip install) → TEST (pytest, lint) → PACKAGE (docker build) → SCAN (security checks) → PUBLISH (docker push) → DEPLOY (helm upgrade) → VERIFY (smoke test)`
+- **Lint** = automatic checks for style and common mistakes (like `helm lint`). A **smoke test** is a quick "is it alive?" check after deploying, e.g. `curl -f https://shop.example.com/health`.
+- **Fail fast:** put the quick, cheap checks first. If an early stage fails, **the later stages don't run at all**, so nothing broken gets packaged or deployed.
+- **How does a pipeline know a step failed? Exit codes** (shell scripting): **0 = success, anything else = failure**. A CI tool checks **only** that number: 0 → ✅ and the next step runs; non-zero → ❌ and every later stage is skipped, exactly like `set -e`. `pytest` exits 0 when all tests pass and 1 when any test fails.
+- ⚠️ **CI trusts the exit code, not the text.** A script that prints "3 tests FAILED" but ends with `exit 0` gives a **green** pipeline.
+
+### Artifacts, environments and deployment strategies
+- An **artifact** is a file the pipeline produces and keeps afterwards: a test report, a packaged chart, a Docker image.
+- An **environment** is a separate copy of the whole app for one purpose: **dev** (developers try things; it breaks often), **staging** (a near-identical copy of production: the dress rehearsal), and **production** (the real thing, with real users).
+- **Build once, deploy many:** build the artifact **once**, then **promote** (move) **the same artifact** from dev to staging to production. Rebuilding it for production would ship something that was never tested.
+- A **deployment strategy** is the way the old version (v1) is replaced by the new one (v2):
 
 | Strategy | How | Downtime? | Rollback | Extra resources / risk |
 |---|---|---|---|---|
 | **Recreate** | stop all v1, then start v2 | **Yes** | redeploy the old one (slow) | none / high |
-| **Rolling** (K8s default) | replace a few at a time (`maxSurge`, `maxUnavailable`) | No | `kubectl rollout undo`, `helm rollback` | a little / medium |
-| **Blue-green** | two full environments, then ONE switch (e.g. Service selector `blue` → `green`) | No | **instant switch back** | **double** / low |
-| **Canary** | 5% of users get v2; watch metrics; then 25 → 50 → 100% | No | send the 5% back to v1 | a little / **lowest** |
+| **Rolling** (K8s default) | replace a few Pods at a time (`maxSurge`, `maxUnavailable`, Session 06) | No | `kubectl rollout undo`, `helm rollback` | a little / medium |
+| **Blue-green** | two full environments: "blue" is live, "green" gets v2 and is tested; then ONE switch (e.g. a Service selector `blue` → `green`) moves all traffic | No | **instant switch back** | **double** / low |
+| **Canary** | 5% of users get v2 (the "canary" that meets problems first); watch the error rates, then 25 → 50 → 100% | No | send the 5% back to v1 | a little / **lowest** |
 
-(Coal miners' canaries fell ill from gas before the miners did.) **Tools:**
-- **GitHub Actions** (`.github/workflows/*.yml` in YAML; jobs run on a **runner**)
-- **Jenkins** (a `Jenkinsfile` in **Groovy**, a programming language; jobs run on an **agent**; a server you maintain, 1000s of plugins)
-- **GitLab CI** (`.gitlab-ci.yml`). **Argo CD** is CD-only for Kubernetes (Session 14).
+**CI/CD tools:** **GitHub Actions** (built into GitHub; today's tool). **Jenkins**: a server you install and maintain yourself, with 1000s of plugins; its pipeline file is a **`Jenkinsfile`** written in **Groovy** (a programming language), and its jobs run on an **agent** (a worker machine). **GitLab CI**: built into GitLab, configured in `.gitlab-ci.yml`. **Argo CD** is deploy-only (CD) for Kubernetes (Session 14).
 
 ### 🛠 Do (~5 min): a pipeline is just exit codes
 ```bash
@@ -81,7 +88,8 @@ echo "== DEPLOY"; echo "deploying to production"
 EOF
 bash mini-pipeline.sh; echo "pipeline exit code: $?"           # run it, then print its exit code
 ```
-(`cat > file <<'EOF' … EOF` writes the lines in between into the file.) Expect `1 test failed` and `pipeline exit code: 1`: **DEPLOY never prints**. Change `sys.exit(1)` to `sys.exit(0)` and rerun: `deploying to production` now prints with exit code 0, although the text said "failed".
+- `cat > file <<'EOF' … EOF` writes the lines in between into the file; `sys.exit(1)` ends the Python line with exit code 1, like a failing test run. Expect `1 test failed` and `pipeline exit code: 1`: **DEPLOY never prints**, because `set -e` stopped the script, exactly as a CI server would.
+- Now make the test **lie**: change `sys.exit(1)` to `sys.exit(0)` and rerun. `deploying to production` prints, with exit code 0, although the text said "failed".
 
 ### ✅ Check 74
 **74.1** A team's pipeline builds, tests, and deploys every passing commit to **staging** automatically. Production deploys happen only when the release manager clicks **Approve**. Which practice is this?
@@ -105,27 +113,38 @@ bash mini-pipeline.sh; echo "pipeline exit code: $?"           # run it, then pr
 ## Concept 75 · GitHub Actions: the parts and how they fit
 **Words you'll learn:** GitHub Actions, workflow, `.github/workflows/`, event (trigger), `push`, `pull_request`, `workflow_dispatch`, `schedule`, cron (recap), UTC, job, step, action, GitHub Marketplace, `actions/checkout`, `actions/setup-python`, runner, GitHub-hosted runner, `ubuntu-latest`, self-hosted runner, workflow run.
 
-**GitHub Actions** = GitHub's built-in CI/CD service: it runs your automation on GitHub's computers when something happens in your repo (free for public repos).
+### The parts, from biggest to smallest
+> **GitHub Actions** is GitHub's built-in CI/CD service: it runs your automation **on GitHub's computers** whenever something happens in your repository. It's free for public repos, and private repos get a free monthly allowance of minutes.
+
 ```
-WORKFLOW = one YAML file in .github/workflows/ (any other folder: silently ignored); on: push = the EVENT (WHEN)
- └─ JOBS (e.g. test, lint): run IN PARALLEL, each on its own fresh RUNNER (runs-on: ubuntu-latest = WHERE)
-     └─ STEPS, in order, on that same machine:  uses: actions/checkout@v7 (an ACTION)  or  run: pytest (shell)
+.github/workflows/ci.yml              ← WORKFLOW: one YAML file = one workflow
+      on: push                        ← EVENT (trigger): WHEN it runs
+      jobs:
+        test:                         ← JOB: runs on its own fresh RUNNER machine
+          runs-on: ubuntu-latest      ← RUNNER: WHERE it runs
+          steps:                      ← STEPS: run in order, on that same machine
+            - uses: actions/checkout@v7      ← a step that uses an ACTION
+            - run: pytest                    ← a step that runs a shell command
+        lint:                         ← another JOB: runs IN PARALLEL with "test"
 ```
-**Analogy: a restaurant kitchen preparing a banquet.** The workflow is the plan, the event is the booking arriving, jobs are separate cooking stations (each with its own clean counter, working at once), steps are one station's instructions in order, actions are ready-made sauces from a supplier, and the runner is the counter and cook.
-- **Events** (`on:`): `push` (add `branches: [main]` as a filter); `pull_request` (a PR is opened **or new commits are pushed to its branch**; it tests the merged result); `workflow_dispatch` (the manual **Run workflow** button, or `gh workflow run`); `schedule` (cron).
-  - **Cron** = `minute hour day-of-month month day-of-week`, 24-hour clock, 0 = Sunday (`1-5` = Mon–Fri).
-  - ⚠️ It's in **UTC** (Coordinated Universal Time, the world's reference clock) unless you set `timezone:`; **IST** (Indian Standard Time) = UTC + 5:30, so `"30 2 * * 1-5"` = 08:00 IST. Default branch only, at most every 5 minutes, may start late.
-- **Job** = steps on **one runner**. Jobs run **in parallel** unless `needs:` makes one wait. **Each job gets a brand-new machine**, so job A's files don't exist in job B. **Step** = one task: `run:` (shell commands) **or** `uses:` (an action). Steps share the runner's files; after a failure, the rest are skipped.
-- **Action** = a reusable, packaged step someone already wrote, from the **GitHub Marketplace** (GitHub's catalogue), written `owner/repo@version` (older tutorials show `@v3`/`@v4`).
-  - **`actions/checkout`** copies (clones) your repo's code onto the empty runner, so it's almost always step 1; `actions/setup-python` installs Python; `upload-artifact`, `download-artifact` and `cache` come in Concept 77.
-- **Runner** = the machine that runs a job.
-  - **GitHub-hosted:** a fresh **VM** (virtual machine) per job, deleted afterwards, picked by a label like `ubuntu-latest` (or `windows-latest`, `macos-latest`).
-  - **Self-hosted:** your own machine with GitHub's runner program (`runs-on: self-hosted`); not wiped between jobs, can reach your private network.
-- **On `git push`:** match workflows' `on:` → a fresh runner per job → steps run, each exit code checked → logs, ✅/❌ and artifacts appear in the Actions tab and on the PR → VM destroyed. One execution = a **workflow run**.
+**Analogy: a restaurant kitchen preparing a banquet.** The **workflow** is the plan ("when a booking arrives, do all this"), and the **event** is the booking arriving. **Jobs** are separate cooking stations, each with its **own clean counter**, working at the same time. **Steps** are one station's instructions, done in order. **Actions** are ready-made sauces bought from a supplier, used as one step. The **runner** is the counter and cook doing the work.
+
+### Each part in detail
+- **Workflow:** a YAML file in **exactly** the folder `.github/workflows/` (note the dot, and the **s**), with any name ending in `.yml`. A file anywhere else is **silently ignored**.
+- **Event** (the `on:` key) = **when** the workflow runs:
+  - `push`: commits are pushed. Add `branches: [main]` to limit it to some branches.
+  - `pull_request`: a PR is opened, **or new commits are pushed to its branch**. GitHub tests what the code would look like **after merging**.
+  - `workflow_dispatch`: someone clicks **Run workflow** in the Actions tab, or types `gh workflow run` (a manual trigger).
+  - `schedule`: at times written in **cron**: five fields, `minute hour day-of-month month day-of-week`, 24-hour clock, day-of-week 0 = Sunday (so `1-5` = Monday to Friday). ⚠️ It's in **UTC** (**Coordinated Universal Time**, the world's reference clock) unless you add a `timezone:` key. **IST** (Indian Standard Time) = UTC + 5:30, so **subtract 5 h 30 min**: `"30 2 * * 1-5"` = 02:30 UTC = **08:00 IST**, Monday to Friday.
+- **Job:** a group of steps that runs on **one runner**. Jobs run **in parallel** unless `needs:` makes one wait for another. **Each job gets a brand-new machine**, so files made in job A **don't exist** in job B (artifacts pass files between jobs, Concept 77).
+- **Step:** one task inside a job, **either** `run:` (shell commands) **or** `uses:` (an action). Steps run in order on the **same** runner, so they share its files. If one fails, the rest are skipped.
+- **Action:** a reusable, packaged step someone has already written, shared on the **GitHub Marketplace** (GitHub's catalogue of actions) and written `owner/repo@version`. **`actions/checkout`** copies (clones) your repo's code onto the runner, which starts empty, so it's almost always step 1. **`actions/setup-python`** installs the Python version you ask for. (`@v7` is a version tag, like an image tag; older tutorials show `@v3` or `@v4`.)
+- **Runner:** the machine that runs a job. A **GitHub-hosted runner** is a fresh **VM** (virtual machine) that GitHub creates for **each job** and deletes afterwards, picked with a label such as `ubuntu-latest` (or `windows-latest`, `macos-latest`). A **self-hosted runner** is **your own** machine with GitHub's runner program installed (`runs-on: self-hosted`): you maintain it, it's **not wiped** between jobs, and it can reach your private network.
+- **What happens on `git push`:** GitHub finds every workflow whose `on:` matches → starts a fresh runner for each job → runs the steps in order, checking each exit code → shows the logs, the ✅/❌ and any artifacts in the **Actions** tab and on the PR → destroys the VM. One execution of a workflow is called a **workflow run**.
 
 ### 🛠 Do (~5 min): look at real runs (read-only)
 ```bash
-gh run list --repo actions/checkout --limit 5   # the newest 5 runs in GitHub's own checkout repo
+gh run list --repo actions/checkout --limit 5   # the newest 5 runs in GitHub's own (public) checkout repo
 gh workflow list --repo actions/checkout        # its workflows (YAML files): name, active, ID
 ```
 Expect columns `STATUS TITLE WORKFLOW BRANCH EVENT ID ELAPSED AGE`; one push often starts several workflows, one row each. **Translate these cron lines** (answers in the answer key under "Do 75"): 1. `0 18 * * *` · 2. `30 3 * * 1` · 3. `*/15 * * * *`
@@ -148,7 +167,7 @@ Expect columns `STATUS TITLE WORKFLOW BRANCH EVENT ID ELAPSED AGE`; one push oft
 ## Concept 76 · Workflow YAML in depth
 **Words you'll learn:** `name`, `on`, branch filter, `jobs`, job ID, `runs-on`, `steps`, `uses`, `run`, `with`, `env`, `needs`, `if`, `strategy` / `matrix`, `fail-fast`, expression (`${{ }}`), context (`github`, `matrix`, `env`, `secrets`, `runner`), `github.sha`, `github.ref`, status functions (`success()`, `failure()`, `always()`), `run: |`, default shell, actionlint.
 
-This is the workflow you'll push in Concept 77; the comments explain each key.
+### A full workflow, line by line (you'll push this one in Concept 77)
 ```yaml
 name: CI                                   # name shown in the Actions tab
 on:                                        # the triggers
@@ -196,34 +215,40 @@ jobs:
       - name: Show what was downloaded
         run: ls -R all-reports             # -R = list recursively
 ```
-- Also: a top-level `env:` sets variables for every job; `if: github.ref == 'refs/heads/main'` on a job runs it only for main; **`${{ github.sha }}`** = the full 40-character commit ID (a unique image tag).
-  - **JUnit XML** = a standard test-report format (**XML** = eXtensible Markup Language).
-  - ⚠️ **One step = `uses` OR `run`, never both.** To run a command after an action, add a second step.
-- An **expression** `${{ … }}` is **filled in by GitHub BEFORE the step runs**. **Analogy:** a mail-merge letter, whose blanks are filled before anyone reads it.
-  - A **context** is a group of values: `github` (`sha`, `ref` = `refs/heads/main`, `ref_name` = `main`, `event_name`, `actor`), `matrix`, `env`, `vars`, `secrets`, `runner` (`runner.os`), `needs`, `steps`.
-  - **`if:` status functions:** `success()` = all earlier passed (**the default**, so steps after a failure are skipped); `failure()` = something failed (send an alert); `always()` = run anyway (upload reports); `cancelled()`.
-- ⚠️ **`${{ env.X }}` vs `$X` in `run:`:** GitHub pastes `${{ env.X }}` in **before bash starts**; `$X` is expanded **by bash** with the shell quote rules. So `echo '$X'` prints a literal `$X`, but `echo '${{ env.X }}'` prints the value.
-- **Matrix:** one job per **combination** (2 versions × 2 `os` values with `runs-on: ${{ matrix.os }}` = 4 jobs). `fail-fast: true` (default) cancels the other copies when one fails.
-  - ⚠️ **Quote versions:** YAML reads `3.10` as the number 3.1.
-- **`needs:`** waits for **all** matrix copies (`needs: [test, lint]` = both); dependants are skipped on failure unless `if: always()`.
-- **Pipe trap:** a Linux `run:` without `shell:` runs as `bash -e {0}` (`-e` = `set -e`) but **without `pipefail`**, so `pytest | tee out.txt` **passes when tests fail** (a pipe's exit code is the last command's, `tee`). Fix: `shell: bash` (adds `-o pipefail`: any failing part fails the pipe).
-- **Common bugs:** a wrong folder (`.github/workflow/`, `github/workflows/`) or a branch filter that doesn't match (`[master]` when you push `main`) → **nothing happens**, no run appears.
-  - Bad indentation/tabs, `on: pushh`, no `runs-on`, `uses` + `run` in one step, `needs:` a missing job, or steps without `-` → **"Invalid workflow file"** with a line number, and no jobs run.
-  - Unquoted `3.10` → Python 3.1, setup fails.
+- **JUnit XML** is a standard test-report format that CI tools can read (**XML** = eXtensible Markup Language, a tag-based format like HTML). `--junitxml=…` makes pytest write one, and that file is the run's **artifact**.
+- ⚠️ **One step = `uses` OR `run`, never both.** To run a command after an action, add a second step.
+
+### Expressions, contexts and `if:`
+- An **expression** is anything inside **`${{ … }}`**. **GitHub works it out and replaces it with plain text BEFORE the step runs**, so the shell never sees `${{ }}`, only the result. **Analogy:** a mail-merge letter, whose blanks are filled in before anyone reads it.
+- A **context** is a group of values you can read in expressions: `github` (`github.sha` = the full 40-character commit ID, handy as a unique image tag; `github.ref` = `refs/heads/main`; `github.ref_name` = `main`; `github.event_name` = `push`), `matrix` (the current matrix value), `env` (values from `env:` blocks), `vars` and `secrets` (Concept 77), and `runner` (`runner.os` = `Linux`).
+- A top-level **`env:`** sets environment variables for every job (it can also go on one job or one step). **`if:`** on a job or step runs it only when a condition is true, e.g. `if: github.ref == 'refs/heads/main'`.
+- **Status functions** in `if:`: **`success()`** = every earlier step succeeded (**the default**, which is why steps after a failure are skipped); **`failure()`** = an earlier step failed (e.g. send an alert); **`always()`** = run anyway, even after a failure (e.g. upload test reports).
+- ⚠️ **`${{ env.X }}` vs `$X` inside `run:`.** `${{ env.X }}` is filled in **by GitHub, before bash starts**. `$X` is expanded **by bash, while running**, using the shell's quote rules. So `echo '$X'` prints a literal `$X` (single quotes), but `echo '${{ env.X }}'` prints the value, because GitHub already pasted it inside the quotes.
+
+### Matrix, `needs:` and a pipe trap
+- A **matrix** runs the job **once per combination**: `python-version: ["3.11", "3.12"]` × `os: [ubuntu-latest, windows-latest]` (with `runs-on: ${{ matrix.os }}`) = **4 jobs**, in parallel.
+- **`fail-fast: true`** (the default) cancels the other copies still running when one fails. Set `false` to let them all finish.
+- ⚠️ **Quote version numbers.** YAML reads `3.10` (unquoted) as the **number 3.1**, so setup-python would look for Python 3.1. Write `"3.10"`.
+- **`needs: test`** waits for **all** matrix copies of `test`, and `needs: [test, lint]` waits for both. If a needed job fails, the dependent job is **skipped**, unless it has `if: always()`.
+- **The pipe trap:** on Linux runners, a `run:` without a `shell:` key runs as **`bash -e {0}`** (`{0}` = the script file GitHub writes from your `run:` text). **`-e`** is `set -e`: stop at the first failing command. But **`pipefail` is off**, and in a pipe (`a | b`) bash reports **only the last command's** exit code. So `run: pytest | tee out.txt` **passes even when tests fail**, because `tee` succeeded. Fix: add **`shell: bash`**, which adds `-o pipefail` (a pipe fails if **any** part fails), or don't pipe test commands.
+
+### Common workflow bugs
+- **Nothing happens, no run appears:** a wrong folder (`.github/workflow/` without the s, or `github/workflows/` without the dot), or a branch filter that doesn't match (`branches: [master]` when you push `main`: the file is valid, it just never matches).
+- **"Invalid workflow file"** with a line number, and no jobs run: bad indentation or tabs, `on: pushh`, no `runs-on`, `uses` + `run` in one step, `needs:` a job that doesn't exist, or steps without `-` (`steps` must be a YAML list).
+- **Setup fails:** unquoted `python-version: 3.10` asks for Python **3.1**.
 
 ### 🛠 Do (~10 min)
-`gh api` calls GitHub's API as you, `--jq .content` keeps one field of the **JSON** (JavaScript Object Notation) reply, and `base64 -d` decodes it: read GitHub's starter workflow (`name: Python application`, a `build` job) and **find** its trigger, job ID, a `uses` step, a `with:` input, and a `run: |`.
-
-**Bug hunt:** in `broken-ci.yml`, add four bugs: under `push:` change `[main]` to `[master]`; delete the `test` job's `runs-on:` line; add `run: python --version` under `uses: actions/setup-python@v7`; change `needs: test` to `needs: tset`.
+**Bug hunt:** in `broken-ci.yml`, add four bugs: under `push:` change `[main]` to `[master]`; delete the `test` job's `runs-on:` line; add `run: python --version` under `uses: actions/setup-python@v7`; change `needs: test` to `needs: tset`. **actionlint** (optional) is a free checker for workflow files, like `helm lint` for GitHub Actions.
 ```bash
 cd ~/devops-practice/cicd && code ci.yml   # paste the workflow above and save (Concept 77 pushes it)
 gh api repos/actions/starter-workflows/contents/ci/python-app.yml --jq .content | base64 -d   # GitHub's starter workflow
 cp ci.yml broken-ci.yml && code broken-ci.yml    # make the four bugs, save
-brew install actionlint                          # (optional) a free checker for workflow files
+brew install actionlint                          # (optional) install the checker
 actionlint ci.yml; echo "exit code: $?"          # the good file: no output, exit code 0
 actionlint broken-ci.yml; echo "exit code: $?"   # the broken copy: errors with line numbers, exit code 1
 ```
-Expect errors about the missing `runs-on`, the step mixing `uses` and `run`, and the unknown job `tset`. The `master` bug is valid YAML, so no checker can see it: only a human catches logic bugs.
+- `gh api` calls GitHub's API as you; `--jq .content` keeps one field of the **JSON** (JavaScript Object Notation) reply; GitHub sends file contents base64-encoded, so `base64 -d` decodes them. You get `name: Python application` with one job, `build`: **find** its trigger, its job ID, a `uses` step, a `with:` input, and a `run: |`.
+- actionlint reports the missing `runs-on`, the step mixing `uses` and `run`, and the unknown job `tset`. **The `master` bug is valid YAML**, so no checker can see it: only a human catches logic bugs.
 
 ### ✅ Check 76
 **76.1** This step fails validation. Why?
@@ -248,18 +273,23 @@ Expect errors about the missing `runs-on`, the step mixing `uses` and `run`, and
 ## Concept 77 · Secrets, artifacts, and a real build & test pipeline
 **Words you'll learn:** secret, repository secret, environment secret, `secrets` context, masking, `GITHUB_TOKEN`, `permissions`, configuration variable (`vars`), artifact (recap), `actions/upload-artifact`, `actions/download-artifact`, retention, cache, `actions/cache`, cache key, virtual environment (venv), pytest, test client, JUnit XML report, `gh repo create`, `gh run watch`, `gh run view`, `--log-failed`, `gh run download`, `gh secret set`.
 
-**Problem:** pipelines log in to things (Docker Hub, a cloud). A password typed into the workflow YAML is committed to Git, readable by anyone with repo access (the world, if public), and stays in the history forever. **Analogy:** a hotel's safe-deposit box: the hotel keeps it, your workflow can use what's inside, but nobody can open it to look.
-- A **secret** = an encrypted value stored by GitHub (not in your files) that workflows can use but **nobody can read back**.
-  - Create it in repo **Settings → Secrets and variables → Actions**, or `gh secret set NAME`; use it via `env:`, e.g. `env: { TOKEN: "${{ secrets.DOCKERHUB_TOKEN }}" }` then `echo "$TOKEN" | docker login -u me --password-stdin`.
-- **Masking:** the exact value shows as **`***`** in logs. ⚠️ A changed copy (base64, reversed) is **not** masked, so never echo secrets.
-  - A secret that **doesn't exist** becomes an **empty string** (no error until, say, the login fails).
-  - Secrets are **not given** to PRs from a **fork** (someone else's copy of your repo). Levels: repository, **environment**, organization.
-- **`GITHUB_TOKEN`:** an automatic secret made for each run (a **token** = a temporary password for a program), for the GitHub API on **this repo** (PR comments, pushing to **GHCR**, GitHub Container Registry); it expires when the job ends.
-  - Limit it with **`permissions:`** (e.g. `contents: read`, `packages: write`).
-- **Variables** (`${{ vars.NAME }}`, `gh variable set`) hold non-secret settings such as `REGISTRY=ghcr.io`: **visible** in logs and readable later, whereas secrets are **masked** and write-only.
-- **Artifacts** (`upload-artifact`: `name`, `path`, `retention-days`) are kept **90 days** by default (**retention**).
-  - ⚠️ Since v4 **each name must be unique within a run** (put the matrix value in it). Use **`if: always()`** so failed runs still save their reports.
-- A **cache** (`actions/cache`, or setup-python's `cache: pip`) reuses downloads; its **key** often uses `hashFiles('requirements.txt')`, a fingerprint that changes when the file changes.
+### Secrets
+Pipelines log in to things: Docker Hub to push images, a cloud account to deploy. A password typed into the workflow YAML is **committed to Git**: anyone with access to the repo can read it (the whole world, for a public repo), and it stays in the Git history **forever**, even after you delete the line.
+
+> A **secret** is an encrypted value stored by GitHub (not in your files) that workflows can use but **nobody can read back**. **Analogy:** a hotel's safe-deposit box: the hotel keeps it, and your workflow can use what's inside, but nobody can open it to look.
+
+- **Create one** in your repo's **Settings → Secrets and variables → Actions**, or with `gh secret set NAME` (it asks for the value and hides your typing). After saving, even you can only replace or delete it.
+- **Use one** by passing it to a step through `env:` (Part G below does exactly this): `env: DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}`, then `run: echo "$DOCKERHUB_TOKEN" | docker login -u myuser --password-stdin` (`--password-stdin` reads the password from the pipe, so it never appears on the command line).
+- **Masking:** if a secret's exact value appears in a log, GitHub shows **`***`** instead. ⚠️ It catches only the **exact** text: a changed copy (base64-encoded, reversed) is **not** masked and leaks. Never echo secrets.
+- A secret that **doesn't exist** becomes an **empty string**, with no error at that point; the failure shows up later (e.g. "login failed").
+- Secrets are **not given** to workflows started by a PR from a **fork** (someone else's copy of your repo), or a stranger's PR could print them. They exist at three levels: repository, **environment** (➕) and organization.
+- **`GITHUB_TOKEN`** is a secret GitHub **creates automatically for every run** (a **token** = a temporary password for a program). It lets the workflow use the GitHub API **for this repo**, e.g. comment on a PR or push an image to **GHCR** (GitHub Container Registry), and it expires when the job ends. Limit what it may do with **`permissions:`** (e.g. `contents: read`, `packages: write`).
+- **Configuration variables** (`${{ vars.NAME }}`, created with `gh variable set`) hold **non-secret** settings such as `REGISTRY=ghcr.io`. They're **visible** in logs and readable later, whereas secrets are **masked** and write-only.
+
+### Artifacts and cache
+- **`actions/upload-artifact`** saves files from a job (inputs: `name`, `path`, `retention-days`). People download them from the run page, and later jobs in the **same run** fetch them with **`actions/download-artifact`**. They're kept **90 days** by default: that's the **retention** period.
+- ⚠️ Since v4, **each artifact name must be unique within a run**, so in a matrix put the matrix value into the name. Add **`if: always()`** so the report is saved even when tests fail, which is exactly when you need it.
+- A **cache** keeps **downloads that rarely change** (like Python packages) so **future runs** are faster: use `actions/cache`, or simply `cache: pip` on setup-python. Its **key** usually includes `hashFiles('requirements.txt')`, a fingerprint of that file, so when requirements.txt changes, a fresh cache is built.
 
 | | **Artifact** | **Cache** |
 |---|---|---|
@@ -269,7 +299,7 @@ Expect errors about the missing `runs-on`, the step mixing `uses` and `run`, and
 | If missing | the downloading job **fails** | the run is just **slower** (a cache miss) |
 
 ### 🛠 Do (~35 min): a real pipeline on your GitHub
-**A. App and tests** (Session 03's Flask app plus a `/health` page). **pytest** runs every `test*` function in `test_*.py`; each **`assert`** must be true. Flask's **test client** is a pretend browser (no server needed); `monkeypatch` sets an env var for one test only; `b"…"` = bytes.
+**A. App and tests.** Session 03's Flask app plus a small `/health` page. **pytest** (Python's most popular test tool) runs every function whose name starts with `test` in files named `test_*.py`, and each **`assert`** line must be true or the test fails. Flask's **test client** is a **pretend browser**: it sends requests straight to the app, with no server needed.
 ```bash
 mkdir -p ~/devops-practice/ci-demo && cd ~/devops-practice/ci-demo   # project folder
 cat > app.py <<'EOF'
@@ -302,10 +332,13 @@ def test_health_is_ok():
 EOF
 printf 'flask==3.0.3\npytest==8.3.3\n' > requirements.txt                 # pinned libraries
 printf '.venv/\n__pycache__/\n.pytest_cache/\nreports/\n' > .gitignore    # files Git must NOT commit
-python3 -m venv .venv && source .venv/bin/activate   # venv = this project's private Python libraries; prompt shows (.venv)
+python3 -m venv .venv && source .venv/bin/activate   # create and switch on a venv; your prompt now shows (.venv)
 pip install -r requirements.txt && pytest -v         # expect "3 passed"
 ```
-**B–D. Workflow, GitHub, watch**
+- `monkeypatch` is a pytest helper that changes something (here the env var `APP_ENV`) **only during that one test**. `response.data` is the page as **bytes**, so the expected text is written `b"…"`.
+- `python3 -m venv .venv` creates a **virtual environment** (**venv**): a private folder holding this project's own Python libraries, so they don't mix with your Mac's Python.
+
+**B–D. Workflow, GitHub, watch.**
 ```bash
 mkdir -p .github/workflows && cp ../cicd/ci.yml .github/workflows/ci.yml   # or paste Concept 76's workflow into it
 git init -b main                 # ⚠️ without -b main your Git names the branch master: branches: [main] never matches
@@ -316,21 +349,21 @@ gh repo create ci-demo --private --source=. --push   # private repo from this fo
 gh run watch                     # follow the run live ("no in progress runs" = it already finished)
 gh run list                      # STATUS ✓, WORKFLOW CI, BRANCH main, EVENT push
 gh run view                      # pick the run: JOBS ✓ and ARTIFACTS test-report-3.11, test-report-3.12
-gh run download -n test-report-3.12 -D downloaded && head -c 300 downloaded/junit-3.12.xml   # fetch + peek
+gh run download -n test-report-3.12 -D downloaded && head -c 300 downloaded/junit-3.12.xml   # fetch one artifact + peek
 ```
-Expect `✓ Created repository <you>/ci-demo`, then `✓ test (3.11)` and `✓ test (3.12)` in parallel, `✓ summary`, completed with 'success'; the XML shows `failures="0"`.
-- Asked for a password on push? Run **`gh auth setup-git`** once, then `git push -u origin main`. (Name taken? Use `ci-demo-2`.)
+- Expect `✓ Created repository <you>/ci-demo`, then `✓ test (3.11)` and `✓ test (3.12)` side by side (in parallel), then `✓ summary`, and the run completed with 'success'. The XML shows `failures="0"`.
+- Asked for a password on push? Run **`gh auth setup-git`** once (it lets Git use your `gh` login), then `git push -u origin main`. (Name taken? Use `ci-demo-2`.)
 
-**E–F. Break it, read the ❌, fix it.** In `app.py` change `Hello from the` to `Hi from the`, and **don't** test locally:
+**E–F. Break it, read the ❌, fix it.** In `app.py`, change `Hello from the` to `Hi from the`, and **don't** test locally this time:
 ```bash
-git commit -am "Change greeting" && git push && gh run watch   # -a = stage changed files; test ❌ (fail-fast may cancel the other copy), summary skipped
-gh run view --log-failed         # only the failed steps' logs
+git commit -am "Change greeting" && git push && gh run watch   # -a = stage changed files; test ❌, summary skipped
+gh run view --log-failed         # only the logs of the steps that failed
 ```
-Expect `E  AssertionError: assert b'Hello from the ci container!' in b'Hi from the ci container!\n'`, `1 failed, 2 passed`, and `##[error]Process completed with exit code 1.` (`>` marks the failing line, `E` says why; reports still upload thanks to `if: always()`.)
-- ⚠️ CI only reported it; a human decides whether to fix the code or the test.
-- Change `Hi` back to `Hello`, run `pytest -q` (3 passed), then `git commit -am "Restore greeting" && git push && gh run watch` → 'success'.
+- Expect `E  AssertionError: assert b'Hello from the ci container!' in b'Hi from the ci container!\n'`, then `1 failed, 2 passed` and `##[error]Process completed with exit code 1.`
+- **How to read it:** **which test** failed, **which line** (`>` marks it), and **why** (the `E` lines). The last line is the key: **exit code 1**, so the step failed. When one test copy fails, `fail-fast` may cancel the other, and `summary` is skipped (it `needs` test). The reports still upload, thanks to `if: always()`.
+- ⚠️ CI only reported the problem; a human decides whether to fix the code or the test. Here it was a mistake: change `Hi` back to `Hello`, run `pytest -q` (3 passed), then `git commit -am "Restore greeting" && git push && gh run watch` → 'success'.
 
-**G. A secret, and masking.** The `cat >>` block **appends** a step to the end of the `summary` job.
+**G. A secret, and masking.** The `cat >>` block **appends** (adds) a step to the end of the `summary` job:
 ```bash
 gh secret set DEMO_SECRET        # hidden prompt: type a FAKE value like pretend-password-123 (--body would hit shell history)
 gh secret list                   # DEMO_SECRET and a date, never the value
@@ -345,7 +378,7 @@ EOF
 git commit -am "Demo: use a secret" && git push && gh run watch
 gh run view --log | grep -E "secret is set|value:"   # pick the newest run
 ```
-Expect `secret is set` and **`value: ***`** (printing is OK only because it's fake). **Keep `ci-demo`** for Session 13. (To delete later: `gh auth refresh -s delete_repo`, then `gh repo delete <you>/ci-demo`.)
+`[ -n "$DEMO_SECRET" ]` = "is the variable non-empty?". Expect `secret is set` and **`value: ***`**: GitHub hid the value. (Printing it is OK only because it's fake.) **Keep `ci-demo`** for Session 13. (To delete it later: `gh auth refresh -s delete_repo`, then `gh repo delete <you>/ci-demo`.)
 
 ### ✅ Check 77
 **77.1** A matrix job (Python 3.11 and 3.12) uploads its report with `name: test-report`, the same name in both copies. The 3.11 copy uploads fine; the 3.12 copy fails at the upload step. Why?
@@ -363,17 +396,20 @@ Expect `secret is set` and **`value: ***`** (printing is OK only because it's fa
 **77.3** (one line) Explain **artifact vs cache** in GitHub Actions.
 
 ## ➕ Small but important (GitHub Actions): read before the quiz
+
 | Item | What it is |
 |---|---|
-| **`workflow_dispatch` inputs** | a manual run asks questions (`inputs: environment: { type: choice, options: [staging, production] }`), read as `${{ inputs.environment }}`; CLI: `gh workflow run ci.yml -f environment=staging` |
-| **`concurrency`** | `concurrency: { group: deploy-${{ github.ref }}, cancel-in-progress: true }`: runs in one group never overlap; the older one is cancelled |
-| **`timeout-minutes`** · **`continue-on-error`** · **path filters** · **`[skip ci]`** | stops a job that runs too long (default **360 min = 6 h**) · `continue-on-error: true`: a failure there doesn't fail the run · `paths: ['src/**']` / `paths-ignore: ['docs/**']` under `push:` · `[skip ci]` in a commit message skips push and PR workflows |
-| **Default env vars** / **`GITHUB_OUTPUT`, `GITHUB_ENV`, `GITHUB_STEP_SUMMARY`** | every step gets `GITHUB_SHA`, `GITHUB_REF`, `GITHUB_REF_NAME`, `GITHUB_REPOSITORY`, `GITHUB_ACTOR`, `GITHUB_RUN_ID`, `GITHUB_WORKSPACE`, `RUNNER_OS`, `CI=true` / `echo "tag=v1" >> "$GITHUB_OUTPUT"` in step `id: meta` → `${{ steps.meta.outputs.tag }}`; `GITHUB_ENV` sets env vars for later steps; `GITHUB_STEP_SUMMARY` adds Markdown to the run page |
-| **Status badge** · **branch protection / rulesets** | `![CI](https://github.com/<you>/ci-demo/actions/workflows/ci.yml/badge.svg)` in the README · rules that **require status checks to pass before merging**, require reviews, block force-pushes (private repos need GitHub Pro) |
-| **Environments + required reviewers** | `environment: production` on a job + required reviewers = the job **pauses until a person approves** (Continuous Delivery); own secrets too |
-| **Reusable workflows** / **composite actions** | callee `on: workflow_call`, caller **job** `uses: owner/repo/.github/workflows/build.yml@main` / your own `action.yml` with `runs: using: composite` |
-| **Self-hosted runners** / **pinning** | **never on public repos** (a stranger's PR runs code on your machine), not wiped between jobs, `runs-on: [self-hosted, linux]` / `uses: actions/checkout@<40-character SHA>` is safest, since a tag can be moved (**SHA** = Secure Hash Algorithm) |
-| **`services:`** / **secrets in `if:`** | `services: db: image: postgres:16` = extra container for tests / can't test `secrets.X` in `if:`: copy it to `env:`, test `env.X` |
+| **`workflow_dispatch` inputs** | A manual run can ask questions, e.g. `inputs: environment: { type: choice, options: [staging, production] }`, read as `${{ inputs.environment }}`. From the Terminal: `gh workflow run ci.yml -f environment=staging` |
+| **`concurrency`** | `concurrency: { group: deploy-${{ github.ref }}, cancel-in-progress: true }`: runs in the same **group** never overlap, and the older one is cancelled |
+| **`timeout-minutes`** · **`continue-on-error`** | Stop a job that runs too long (default **360 min = 6 h**) · `continue-on-error: true` = a failure in that step or job doesn't fail the run |
+| **Path filters** · **`[skip ci]`** | `paths: ['src/**']` under `push:` runs only when those files change (`paths-ignore:` = the opposite) · `[skip ci]` in a commit message skips the push and PR workflows |
+| **Default env vars** · **`GITHUB_OUTPUT`** | Every step automatically gets `GITHUB_SHA`, `GITHUB_REF`, `GITHUB_ACTOR`, `RUNNER_OS`, `CI=true`, … · pass a value to later steps: `echo "tag=v1" >> "$GITHUB_OUTPUT"` in a step with `id: meta`, then `${{ steps.meta.outputs.tag }}` |
+| **Branch protection / rulesets** | Repo rules that **require status checks to pass before merging** (and reviews, no force-pushes), so a red CI really blocks the merge. Private repos need GitHub Pro for this |
+| **Environments + required reviewers** | `environment: production` on a job, plus required reviewers in Settings → Environments: the job **pauses until a person approves** (Continuous Delivery's manual gate). Environments can hold their own secrets |
+| **Reusable workflows** | One pipeline shared by many repos: the called workflow has `on: workflow_call`, and the caller **job** says `uses: owner/repo/.github/workflows/build.yml@main` |
+| **Self-hosted runner security** | **Never on public repos**: a stranger's PR would run its code on your machine. They aren't wiped between jobs; pick them with labels, e.g. `runs-on: [self-hosted, linux]` |
+| **Pin actions to a commit** | `uses: actions/checkout@<40-character commit SHA>` is safest, because a tag like `v7` can be moved to different code (**SHA** = Secure Hash Algorithm, which makes Git's commit IDs) |
+| **Secrets in `if:`** | You can't test `secrets.X` directly in `if:`: copy it into `env:` and test `env.X` |
 
 **Quick checks:** (1) How do you make a production deploy job wait for a person's approval? (2) How do you stop two deployments of the same branch from running at the same time?
 *Answers:*
@@ -433,3 +469,12 @@ jobs:
 **L1.** Write the full forms of **CI** and **CD**, and explain **Continuous Delivery vs Continuous Deployment** in contrast form.
 
 **L2.** Explain **job vs step** in GitHub Actions: where each one runs, and what they share.
+
+### ✍️ Write the command
+**C1.** Turn the current folder into a new Git repository whose first branch is named `main` (so `branches: [main]` will match).
+
+**C2.** In one command, create a **private** GitHub repository named `ci-demo` from the current folder, set it as the remote, and push your commits to it.
+
+**C3.** Your latest workflow run failed. Show only the logs of the steps that failed.
+
+**C4.** Write the workflow's `on:` block so it runs on every push to `main` and on every pull request into `main`.

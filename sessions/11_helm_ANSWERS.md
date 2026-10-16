@@ -224,3 +224,18 @@ Revision 2 worked. Revision 3 (run without `--wait`) set a wrong image tag: one 
 **L2.** You set `--set image.tag=2.0` in one upgrade, and the next upgrade (`--set replicaCount=4` only) brings back the old image. Explain why, and give two ways to avoid it.
 
 **Model answer:** *"Each `helm upgrade` starts from the chart's values.yaml plus only the values passed in that command, so the earlier `--set image.tag=2.0` isn't remembered and the default tag returns. To avoid it, keep all settings in a values file (e.g., `values-prod.yaml` in Git) and pass `-f values-prod.yaml` on every upgrade, or add `--reuse-values` so the previous release's values are kept and the new flags are merged on top."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Without sending anything to the cluster, print the Kubernetes YAML that the chart in the folder `./mychart` would produce for a release named `web`.
+`helm template web ./mychart`: `template` = render the templates with the values and **print** the YAML (nothing is installed); `web` = the release name to pretend with (it fills `{{ .Release.Name }}`); `./mychart` = the chart folder. (Alternative: add `-s templates/deployment.yaml` to print only one file.)
+
+**C2.** Install the chart in `./mychart` as a release named `shop`, into a namespace `dev` that doesn't exist yet, using the settings in the file `values-dev.yaml`.
+`helm install shop ./mychart -n dev --create-namespace -f values-dev.yaml`: `install` = create a new release (revision 1); `shop` = the release name; `./mychart` = the chart; `-n dev` = put it in the `dev` namespace; `--create-namespace` = create `dev` first, since it's missing (without it: `namespaces "dev" not found`); `-f values-dev.yaml` = override the chart's default values with this file. (Alternative: `--namespace dev` and `--values values-dev.yaml` are the long forms; flag order doesn't matter.)
+
+**C3.** Upgrade the release `web` with the chart in `./mychart`, changing the image tag to `1.28-alpine` and the replica count to `3` right on the command line.
+`helm upgrade web ./mychart --set image.tag=1.28-alpine --set replicaCount=3`: `upgrade` = make a new revision of an existing release; `web` = the release; `./mychart` = the chart; `--set image.tag=1.28-alpine` = override the nested key `image:` → `tag:` (the dot walks down one level); `--set replicaCount=3` = override `replicaCount` (capital C, exactly as in values.yaml). (Alternative: one flag with commas, `--set image.tag=1.28-alpine,replicaCount=3`.)
+
+**C4.** Revision 3 of the release `web` is broken. Take the release back to revision 2.
+`helm rollback web 2`: `rollback` = return to an earlier revision's settings; `web` = the release; `2` = the revision to go back to. It's recorded as a **new** revision 4 ("Rollback to 2"), and revision 3 stays in `helm history web`. (Alternative: `helm rollback web` with no number goes to the previous revision, which is 2 here.)

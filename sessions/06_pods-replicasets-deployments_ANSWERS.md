@@ -201,3 +201,18 @@
 **L2.** Explain `maxSurge` vs `maxUnavailable` in contrast form, with the numbers for `replicas: 4` and the 25% defaults.
 
 **Model answer:** *"`maxSurge` is how many extra Pods above the desired count may exist during a rolling update (rounded up: 25% of 4 = 1, so at most 5 Pods), whereas `maxUnavailable` is how many Pods below the desired count may be unavailable (rounded down: 25% of 4 = 1, so at least 3 must stay available)."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** List only the Pods that have **both** labels `app=shop` and `env=prod`.
+`kubectl get pods -l app=shop,env=prod`: `get pods` = list Pods · `-l` = filter by a label selector · `app=shop,env=prod` = both pairs must match (the comma means AND; no spaces).
+
+**C2.** In the Deployment `web`, change the container named `nginx` to the image `nginx:1.28`.
+`kubectl set image deployment/web nginx=nginx:1.28`: `set image` = change a container's image · `deployment/web` = type/name of the target · `nginx=` = the **container name** (not the Deployment name) · `nginx:1.28` = the new image:tag; this starts a rolling update. (Alternative: change `image:` in `deployment.yaml` and run `kubectl apply -f deployment.yaml`.)
+
+**C3.** Roll the Deployment `web` back to **revision 1** (not just the previous revision).
+`kubectl rollout undo deployment/web --to-revision=1`: `rollout undo` = roll back · `deployment/web` = which Deployment · `--to-revision=1` = go to revision 1 instead of the previous one (it comes back as a new revision number; see it with `kubectl rollout history deployment/web`).
+
+**C4.** Without creating anything in the cluster, write the YAML for a Deployment `api` (image `nginx:1.27`, 3 replicas) into a file called `api.yaml`.
+`kubectl create deployment api --image=nginx:1.27 --replicas=3 --dry-run=client -o yaml > api.yaml`: `create deployment api` = an imperative create named `api` · `--image=nginx:1.27` = the container image · `--replicas=3` = 3 Pods · `--dry-run=client` = only build the object, send nothing to the cluster · `-o yaml` = print it as YAML · `> api.yaml` = redirect that output into the file.

@@ -662,3 +662,24 @@ jobs:
 | < 22 | Needs a focused review | Kubernetes troubleshooting (Session 10) + Docker (03–04) + the weak list first: they carry the most marks |
 
 **Topic map of the mock:** Kubernetes: M2, M4, M7, M9, M12, M15, M21, M23, M24, D4 · Docker: M3, M13, M22, D2, D3 · Foundations: M1, M5, M10, M14, M16, D1 · CI/CD + DevSecOps: M6, M11, M25, D5 · Terraform/Cloud: M8, M17, M18 · Monitoring/GitOps/Helm: M19, M20.
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Your `git push` to `main` was rejected with `! [rejected] main -> main (fetch first)`. Bring in your teammate's new commits by **replaying your commits on top of** the remote's `main` (no merge commit); then, only if that worked, push again.
+`git pull --rebase origin main && git push`: `git pull` = fetch the remote's new commits and combine them with yours; `--rebase` = replay your local commits on top of them instead of making a merge commit; `origin main` = from the remote `origin`, branch `main`; `&& git push` = push only if the pull worked (on a conflict: edit → `git add` → `git rebase --continue`, then push; never `--force` a shared branch). (Alternative: `git fetch origin && git rebase origin/main && git push`.)
+
+**C2.** Save the current commit's **short** SHA in a shell variable `TAG`; then, only if that worked, build an image named `counter`, tagged with that SHA, from the current folder.
+`TAG=$(git rev-parse --short HEAD) && docker build -t counter:$TAG .`: `$( … )` runs the command inside and pastes its output; `git rev-parse --short HEAD` prints the current commit's short SHA (e.g. `a1b2c3d`); `TAG=…` (no spaces around `=`) stores it in a shell variable; `&&` = only if that worked; `docker build` builds an image from the `Dockerfile`; `-t counter:$TAG` = name `counter`, tag = the SHA; the final `.` = the build context (the current folder; easy to forget). (Alternative: two lines, `TAG=$(git rev-parse --short HEAD)` then `docker build -t "counter:$TAG" .`.)
+
+**C3.** You changed `app.py` in the counter project. Rebuild the images and start the Compose stack in the background; then, only if that worked, list the stack's containers and their status.
+`docker compose up -d --build && docker compose ps`: `up` creates and starts every service in `compose.yaml`; `-d` = in the background (detached); `--build` = rebuild the images first (without it, Compose reuses the old image and your change is missing); `&&` = only if that worked; `ps` lists this stack's containers with their status and ports. (Alternative: `docker compose up --build -d && docker compose ps`.)
+
+**C4.** The `counter-web` Service has no endpoints. List all Pods in the `counter` namespace **with their labels shown**, so you can compare them with the Service's selector.
+`kubectl get pods -n counter --show-labels`: `get pods` lists the Pods; `-n counter` = in the `counter` namespace (without it you'd see `default`); `--show-labels` adds a LABELS column (e.g. `app=counter-web,pod-template-hash=…`) to compare with the `Selector:` from `kubectl describe svc counter-web -n counter`. (Alternative: `kubectl get pods --namespace counter --show-labels`.)
+
+**C5.** Deploy the local chart `./charts/counter` as the release `counter` in the namespace `counter`: install it if it doesn't exist yet, otherwise upgrade it; create the namespace if it's missing; set the value `image.tag` to the contents of `$TAG`; and report success only once the Pods are Ready.
+`helm upgrade --install counter ./charts/counter -n counter --create-namespace --set image.tag=$TAG --wait`: `helm upgrade` upgrades a release, and `--install` installs it instead if it doesn't exist yet (safe to re-run); `counter` = the release name; `./charts/counter` = the chart folder; `-n counter` = the namespace; `--create-namespace` = create it if missing; `--set image.tag=$TAG` = override one value from `values.yaml` (the shell fills in `$TAG`); `--wait` = report success only after the Pods are Ready (otherwise `deployed` appears as soon as Kubernetes accepts the YAML). (Alternative: `helm upgrade --install counter ./charts/counter --namespace counter --create-namespace --set image.tag=$TAG --wait`.)
+
+**C6.** Make a Terraform plan using the variable values in `prod.tfvars` and save it to a file named `tfplan`; then, only if planning worked, apply **exactly that saved plan**.
+`terraform plan -var-file=prod.tfvars -out=tfplan && terraform apply tfplan`: `plan` = the dry run; `-var-file=prod.tfvars` loads variable values from that file (it beats `terraform.tfvars` and `TF_VAR_`); `-out=tfplan` saves the plan to the file `tfplan`; `&&` = only if planning worked; `apply tfplan` carries out exactly the saved plan, without making a new plan and without asking `yes` (what was reviewed is what runs).

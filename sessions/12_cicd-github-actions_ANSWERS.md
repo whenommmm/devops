@@ -248,3 +248,25 @@ jobs:
 **L2.** Explain **job vs step** in GitHub Actions: where each one runs, and what they share.
 
 **Model answer:** *"A job is a group of steps that runs on its own fresh runner VM, and jobs run in parallel unless `needs:` orders them, sharing files only through artifacts, whereas a step is a single command (`run`) or action (`uses`) inside a job; steps run in order on the same runner and share its files and workspace."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Turn the current folder into a new Git repository whose first branch is named `main` (so `branches: [main]` will match).
+`git init -b main`: `git init` = create a new repository here (the hidden `.git/` folder); `-b main` = name the first branch `main` (without it your Git may call it `master`, and `branches: [main]` never matches). (Alternative: `git init --initial-branch=main`, the long form.)
+
+**C2.** In one command, create a **private** GitHub repository named `ci-demo` from the current folder, set it as the remote, and push your commits to it.
+`gh repo create ci-demo --private --source=. --push`: `gh repo create` = make a repository on GitHub; `ci-demo` = its name; `--private` = only you can see it; `--source=.` = use the local repository in this folder (`.`) and add the new repo as its remote `origin`; `--push` = push the local commits right away. (Alternative: `gh repo create ci-demo --private --source . --push`, with a space instead of `=`.)
+
+**C3.** Your latest workflow run failed. Show only the logs of the steps that failed.
+`gh run view --log-failed`: `gh run view` = show one workflow run (it asks you to pick one if you don't give a run ID); `--log-failed` = print the logs of the failed steps only, instead of the whole log (`--log`). (Alternative: `gh run view <run-id> --log-failed`, taking the ID from `gh run list`.)
+
+**C4.** Write the workflow's `on:` block so it runs on every push to `main` and on every pull request into `main`.
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+```
+`on:` = the triggers; `push:` = run when commits are pushed; `branches: [main]` under it = only pushes to `main`; `pull_request:` = run when a PR is opened or new commits are pushed to its branch; `branches: [main]` under it = only PRs whose **target** is `main`. Indent with spaces (2 per level), never tabs. (Alternative: `branches:` as a dash list, `- main` on the next line, means the same.)

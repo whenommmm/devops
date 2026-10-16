@@ -10,7 +10,9 @@ mkdir -p ~/devops-practice/k8s-v && cd ~/devops-practice/k8s-v   # today's folde
 ```
 > ⚠️ **Never delete the `minikube` or `localstack` containers.** Leave namespaces you didn't create (`argocd`, `ingress-nginx`, `final-app`) and their PersistentVolume alone. Today everything runs in `default`.
 
+---
 ## 🔁 Warm-up (from Kubernetes IV and your weak list)
+
 **W1.** A teammate says a Secret is safe because `kubectl get secret db-pass -o yaml` shows `password: cGFzc3dvcmQ=` instead of the real password. What's accurate?
 - A) It's encrypted with the cluster's private key
 - B) It's only encoded; `base64 -d` reveals it
@@ -32,23 +34,35 @@ echo 'Deploying $APP to "prod"'
 - B) `Deploying backend to "prod"`
 - C) `Deploying backend to prod`
 - D) `Deploying $APP to prod`
+
+---
 ## Concept 62 · Volumes in Pods: giving containers somewhere to keep files
+
 **Words you'll learn:** ephemeral, volume, mount, `volumes`, `volumeMounts`, `mountPath`, `emptyDir`, sidecar, `hostPath`, `configMap`/`secret` volume, `readOnly`, tmpfs.
-- **Problem:** files in a container's writable layer are **ephemeral** (short-lived, Session 04), and the **kubelet** (the agent on each node) restarts a crashed container with a fresh layer. Also, Asha's `shipper` container can't even see her `app` container's log files.
-- **Idea:** a **volume** is **a folder that belongs to the Pod**; each container **mounts** it (plugs it in) at a path of its choice. **Analogy: a shared drawer in an office room** (Pod = room, containers = colleagues): a replacement colleague still finds the papers.
-- **Two halves, joined by a name:** `volumes` (Pod level) = **what** storage; `volumeMounts` (in each container) = **where** (`mountPath`). ⚠️ **Exam trap:** the names must **match exactly**, or apply fails with `Not found: "config"`.
+
+### The problem
+Files a container writes go into its **writable layer** (Session 04), which is **ephemeral** (short-lived): when a container crashes, the **kubelet** (the agent on each node) restarts it with a fresh, empty layer. **Story:** Asha's Pod has an `app` container that writes logs to `/var/log/app`, and a `shipper` container that should send them to a log server. But each container has its own filesystem, so `shipper` can't even see the files, and they vanish whenever `app` restarts.
+
+### The idea: a volume
+> A **volume** is **a folder that belongs to the Pod**, not to any one container. Each container can **mount** it (plug it in) at a folder path of its choice.
+
+**Analogy: a shared drawer in an office room.** The Pod is the room, the containers are colleagues, and the volume is a drawer that belongs to **the room**. A replacement colleague (a restarted container) still finds the papers. What happens when the room itself is cleared out depends on the drawer's **type**:
 
 | Type | What it is | Survives a container restart? | Survives Pod deletion? |
 |---|---|---|---|
-| **`emptyDir`** | An empty folder made when the Pod starts | ✅ | ❌ deleted with the Pod |
+| **`emptyDir`** | An empty folder, created when the Pod starts | ✅ | ❌ deleted with the Pod |
 | **`hostPath`** | A folder on the **node's** own disk | ✅ | ✅ but only on **that node** |
-| **`configMap`** / **`secret`** | Each key becomes a **file**; the value is its content | ✅ | (separate objects) |
+| **`configMap`** / **`secret`** | Each key of the object shown as a **file** | ✅ | (they're separate objects) |
 | **`persistentVolumeClaim`** | Real, lasting storage (Concept 63) | ✅ | ✅ until you delete the claim |
 
-- **emptyDir** is scratch space, and the usual way to share files with a **sidecar** (a helper container beside the app, like `shipper`). With `medium: Memory` it lives in RAM (**tmpfs**), counted against the memory limit.
-- **hostPath is risky:** a Pod recreated on another node sees different data, and `hostPath: /` exposes the node's files. It only *seems* fine on one-node minikube.
-- **configMap volume:** keys `color=blue`, `mode=dev` mounted at `/etc/app` → files `color` (containing `blue`) and `mode`. Secret files live in memory, already decoded. Mounted files **auto-update** (within a minute); **env vars don't**.
-### 🛠 Do (~10 min): two containers sharing an emptyDir, plus a ConfigMap as files
+- **`emptyDir`** lives exactly as long as the Pod. It's scratch space, and the usual way to share files with a **sidecar**: a helper container running beside the main app in the same Pod (like `shipper`). With `medium: Memory` it lives in RAM (**tmpfs**, as in Docker): fast, but it counts against the memory limit.
+- **`hostPath` is risky:** a Pod recreated on another node sees *that* node's folder (different data), and `hostPath: /` would expose the node's own files. It only *seems* fine on minikube, which has a single node.
+- **`configMap` / `secret` volumes** (Session 08): **each key becomes a file, and the file's content is the value**. Keys `color=blue` and `mode=dev` mounted at `/etc/app` give the files `color` (containing `blue`) and `mode`. Secret files live in memory, already decoded from base64.
+- **Updates:** change the ConfigMap, and the **mounted files update by themselves** within about a minute. **Environment variables don't**: they're read once, when the container starts.
+
+**How it's written: two halves, joined by a name.** **`volumes`** (at Pod level) says **what** storage the Pod has: a name plus a type. **`volumeMounts`** (inside each container) says **where** that container sees it: the volume's name plus a **`mountPath`**. ⚠️ **Exam trap:** the names must **match exactly**, or `kubectl apply` fails with `Not found: "config"`.
+
+### 🛠 Do (~10 min): two containers sharing an emptyDir
 `code shared-pod.yaml`, paste, save (busybox = a tiny image with `sh`, `date` and `cat`):
 ```yaml
 apiVersion: v1
@@ -62,36 +76,28 @@ spec:
       command: ["sh", "-c", "while true; do date >> /shared/log.txt; sleep 5; done"]
       volumeMounts:               # ② WHERE this container plugs the volume in
         - name: shared-data       #    must match a name under volumes
-          mountPath: /shared
+          mountPath: /shared      #    the folder path inside THIS container
     - name: reader                # just sleeps, so we can look inside
       image: busybox:1.36
       command: ["sh", "-c", "sleep 3600"]
       volumeMounts:
         - name: shared-data
-          mountPath: /data        # same volume, different path
-        - name: settings
-          mountPath: /etc/app
+          mountPath: /data        # same volume, different path: same files
           readOnly: true          # this container can't change the files (like Docker's :ro)
   volumes:                        # ① WHAT storage the Pod has: a name + a type
     - name: shared-data
       emptyDir: {}                # {} = an empty map = default settings
-    - name: settings
-      configMap:
-        name: shared-settings
 ```
 ```bash
-kubectl create configmap shared-settings --from-literal=color=blue --from-literal=mode=dev   # a ConfigMap with 2 keys
 kubectl apply -f shared-pod.yaml
 kubectl get pod shared-pod                                # shared-pod   2/2   Running  (2 of 2 containers ready)
 kubectl exec shared-pod -c reader -- cat /data/log.txt    # dates the writer wrote; -c = which container, -- = the command follows
-kubectl exec shared-pod -c reader -- ls /etc/app          # color  mode  (one file per key)
-kubectl exec shared-pod -c reader -- cat /etc/app/color   # blue
 kubectl delete pod shared-pod                             # delete the Pod…
 kubectl apply -f shared-pod.yaml                          # …and recreate it
 kubectl exec shared-pod -c reader -- cat /data/log.txt    # only 1–2 fresh dates: the emptyDir died with the old Pod
 kubectl delete pod shared-pod                             # clean up
-kubectl delete configmap shared-settings
 ```
+
 ### ✅ Check 62
 **62.1** A Pod has an `app` container that writes logs to `/var/log/app`, and a `shipper` container that reads them and sends them to a log server. The logs only need to survive **container restarts**, not Pod deletion. Which volume fits best?
 - A) `hostPath` with `/var/log` on the node
@@ -118,14 +124,28 @@ kubectl delete configmap shared-settings
 - B) Two files, `color` and `mode`, one per key
 - C) Two env vars, `COLOR` and `MODE`, not files
 - D) Nothing until the Pod is restarted by hand
+
+---
 ## Concept 63 · PersistentVolume, PersistentVolumeClaim & StorageClass: storage that outlives Pods
+
 **Words you'll learn:** PersistentVolume (PV), PersistentVolumeClaim (PVC), StorageClass, provisioner, static/dynamic provisioning, binding, `Mi`/`Gi`, access modes (RWO, ROX, RWX, RWOP), reclaim policy (Retain, Delete, Recycle), statuses (Available, Bound, Released, Pending), cluster-scoped, default StorageClass, `volumeBindingMode`.
-- **Problem:** Ravi's team runs a PostgreSQL database. Its storage must outlive the Pod (so not emptyDir) and follow the Pod to any node (so not hostPath).
-- **PersistentVolume (PV):** a **real piece of storage** with a size and rules; **cluster-scoped** (not in a namespace). **PersistentVolumeClaim (PVC):** a developer's **request** ("1 GiB, read-write"); it's namespaced, and the Pod names the **claim**, never the PV.
-- **StorageClass:** a storage **category** plus its **provisioner**, which **creates PVs automatically**. **Static** provisioning = an admin makes PVs by hand; **dynamic** = the provisioner makes one per PVC (almost everywhere, including minikube).
-- **Analogy: booking a hotel room.** PVC = your booking; PV = the actual room 204; StorageClass = the room category plus housekeeping who prepare rooms on demand; Pod = the guest.
-- **Binding** = reception giving room 204 to your booking: always **1 : 1**. A PV must have the **same class**, **include the access mode** asked for, and be **at least** the size asked for (ask 150Mi, get a 200Mi PV: you get all 200Mi).
-- **Statuses:** PV Available → Bound → Released (→ Failed); PVC Pending → Bound. **Units:** `Mi` = mebibyte (1024 × 1024 bytes), `Gi` = gibibyte (1024 Mi). `M` and `G` are powers of 1000.
+
+### The problem
+Ravi's team runs a **PostgreSQL** database. Its storage must **outlive the Pod** (so not emptyDir) and **follow the Pod to any node** (so not hostPath). And developers shouldn't have to be storage experts: they just want to say "I need 1 GiB I can read and write."
+
+### The idea: separate "what I need" from "what exists"
+- **PersistentVolume (PV):** a **real piece of storage** (a disk, a network folder) with a size and rules. *Persistent* = lasting. PVs are **cluster-scoped**: they belong to the whole cluster, not to a namespace.
+- **PersistentVolumeClaim (PVC):** a developer's **request** for storage ("100 MiB, read-write"). It lives in a namespace, and a Pod names the **claim**, never the PV.
+- **StorageClass:** a **category** of storage plus its **provisioner**, the component that **creates PVs automatically** when a claim asks for that category.
+
+**Analogy: booking a hotel room.** The PVC is your **booking** ("one double room": you don't pick the number). The PV is the **actual room 204**. The StorageClass is the **room category plus the housekeeping staff** who prepare rooms on demand. **Binding** is reception assigning room 204 to your booking. The Pod is the **guest**, who quotes the booking.
+```
+  Pod  ──uses──►  PVC  ──bound to──►  PV  ──is really──►  actual storage
+ (guest)        (booking)          (room 204)           (disk / network folder)
+```
+**Provisioning** = getting storage ready. **Static:** an admin creates PVs by hand, in advance. **Dynamic:** the provisioner creates a PV the moment a PVC arrives; this is used almost everywhere, including minikube. A PVC that names no class gets the **default StorageClass**. **Units:** `Mi` = mebibyte (1024 × 1024 bytes), `Gi` = gibibyte (1024 Mi); `M` and `G` are powers of 1000.
+
+### Access modes, binding and reclaim policy
 
 | Access mode | Full form | Meaning |
 |---|---|---|
@@ -136,34 +156,37 @@ kubectl delete configmap shared-settings
 
 ⚠️ **Exam trap: RWO means one *node*, not one *Pod*.** Pods on the same node can share it. Most cloud disks (like Amazon's EBS) support **only RWO**.
 
-**Reclaim policy** (what happens to the PV when its PVC is deleted):
-- **Retain:** the PV **stays, with its data**, as **`Released`**, and isn't reused until an admin cleans up. Use it for precious data.
-- **Delete:** the PV **and the real storage** are deleted: data gone. Usual for dynamic PVs. **Recycle:** ⚠️ deprecated wipe-and-reuse.
+**Binding** connects **one PVC to one PV** (always 1 : 1). A PV qualifies only if it has the **same class**, **includes the access mode** asked for, and is **at least the size** asked for (ask for 150Mi, get a 200Mi PV: you get all 200Mi). A PV's status goes **Available** (free) → **Bound** (in use by a claim) → **Released** (its claim was deleted); a PVC's goes **Pending** (no match yet) → **Bound**.
 
-| Why a PVC is stuck `Pending` | Clue in `kubectl describe pvc` Events |
+**Reclaim policy** = what happens to the PV when its PVC is deleted:
+- **Retain:** the PV **stays, with its data**, as **`Released`**, and isn't given to a new claim until an admin cleans up (the room stays locked with the guest's things inside). Use it for precious data.
+- **Delete:** the PV **and the real storage** are deleted: data gone. Usual for dynamic PVs. (**Recycle**, a wipe-and-reuse, is deprecated.)
+
+**Why a PVC is stuck `Pending`:** run `kubectl describe pvc <name>` and read the **Events** at the bottom.
+
+| Cause | Clue in the Events |
 |---|---|
 | The StorageClass doesn't exist (a typo, or a cloud class like `gp2` on minikube) | `storageclass… "fast-ssd" not found` |
-| Static setup: no PV with enough size, the right mode and class | `no persistent volumes available for this claim…` |
-| The class uses `volumeBindingMode: WaitForFirstConsumer` | `waiting for first consumer…`: **normal**, it binds once a Pod uses it |
+| Static setup: no PV has enough size, the right mode and the right class | `no persistent volumes available for this claim…` |
+| The class's **`volumeBindingMode`** (*when* to bind) is `WaitForFirstConsumer` | `waiting for first consumer…`: **normal**, it binds once a Pod uses it |
 
 ### 🛠 Do (~12 min): data that survives the Pod
-`code notes-pvc.yaml`. It names no `storageClassName`, so the default class is used (dynamic provisioning):
+`code notes-pvc.yaml`, paste, save:
 ```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: notes-pvc
-spec:
+spec:                     # no storageClassName → the default class (dynamic provisioning)
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteOnce       # one node at a time
   resources:
     requests:
-      storage: 100Mi
+      storage: 100Mi      # how much space we ask for
 ```
-- Ready-made in `~/DevOPS/sessions/labs/09/` (open with `code` to read): `notes-pod.yaml`, a busybox Pod that appends one timestamped line to `/data/notes.txt`, then sleeps. Its `volumes:` entry uses `persistentVolumeClaim:` → `claimName: notes-pvc`.
-- `bad-pvc.yaml`: a 1Gi claim with `storageClassName: fast-ssd`, a class that doesn't exist on minikube.
+Ready-made in `~/DevOPS/sessions/labs/09/` (open with `code` to read): `notes-pod.yaml`, a busybox Pod that appends one timestamped line to `/data/notes.txt`, then sleeps (its volume is `persistentVolumeClaim:` → `claimName: notes-pvc`); and `bad-pvc.yaml`, a 1Gi claim for `storageClassName: fast-ssd`, a class minikube doesn't have.
 ```bash
-kubectl get storageclass                         # standard (default)   k8s.io/minikube-hostpath   Delete   Immediate
+kubectl get storageclass                         # standard (default)   k8s.io/minikube-hostpath   Delete   Immediate (= bind at once)
 kubectl apply -f notes-pvc.yaml
 kubectl get pvc notes-pvc                        # STATUS Bound, VOLUME pvc-33b7… (the auto-made PV), 100Mi, RWO
 kubectl apply -f ~/DevOPS/sessions/labs/09/notes-pod.yaml
@@ -173,7 +196,6 @@ kubectl get pvc notes-pvc                        # still Bound: the claim doesn'
 kubectl apply -f ~/DevOPS/sessions/labs/09/notes-pod.yaml   # a new Pod (give it a few seconds)
 kubectl exec notes-pod -- cat /data/notes.txt    # TWO lines now: the data outlived the Pod
 kubectl get pv,pvc                               # a comma lists two kinds; your PV: Delete, Bound, default/notes-pvc
-kubectl describe pvc notes-pvc                   # Used By: notes-pod; event ProvisioningSucceeded
 kubectl apply -f ~/DevOPS/sessions/labs/09/bad-pvc.yaml
 kubectl get pvc bad-pvc                          # STATUS Pending
 kubectl describe pvc bad-pvc | tail -3           # ProvisioningFailed … storageclass "fast-ssd" not found
@@ -181,6 +203,7 @@ kubectl delete pod notes-pod                     # clean up: Pods first, then cl
 kubectl delete pvc notes-pvc bad-pvc
 kubectl get pv                                   # your pvc-33b7… PV is gone too: reclaim policy Delete
 ```
+
 ### ✅ Check 63
 **63.1** A cluster uses **static** provisioning only. Available PVs: `pv-a` (10Gi, RWO) and `pv-b` (3Gi, RWX), both in the same class. A new PVC asks for **5Gi with RWX**. What happens?
 - A) It binds to pv-a, since 10Gi covers 5Gi
@@ -195,37 +218,51 @@ kubectl get pv                                   # your pvc-33b7… PV is gone t
 - D) Bound, because the Pod still remembers it
 
 **63.3** (one line) Explain PV vs PVC in contrast form, using the hotel analogy.
+
+---
 ## Concept 64 · Probes: liveness, readiness & startup
+
 **Words you'll learn:** health check, probe, liveness/readiness/startup probe, deadlock, `httpGet`, `tcpSocket`, `exec`, `grpc`, `initialDelaySeconds`, `periodSeconds`, `timeoutSeconds`, `failureThreshold`, `successThreshold`, Ready, endpoints, `Unhealthy` event, restart loop, grace period.
-- **Problem:** a **deadlocked** app (two parts waiting for each other forever) still shows `Running`, because Kubernetes only checks that PID 1 is alive. A slow starter gets users too early. **A running process is not a healthy, ready app.**
-- **Idea:** a **health check** is a small "is this app OK?" test. A **probe** is a health check the **kubelet runs on a container again and again**. On failure it **restarts** the container or **stops sending it traffic**.
-- **Analogy: a restaurant manager.** Liveness = "Are you awake?" (a frozen waiter is replaced). Readiness = "Ready to take orders?" (no new customers are seated in their section, but they keep the job). Startup = a day-one grace period for a new chef.
+
+### The problem
+An app stuck in a **deadlock** (two parts of the program each waiting for the other, forever) still shows `Running`, because by default Kubernetes only checks that the main process (PID 1) is alive. Every request hangs. Another app needs 20 s to load its data, yet gets users the moment its container starts. **A running process is not the same as a healthy, ready app.**
+
+### The idea: probes
+> A **probe** is a **health check** (a small "is this app OK?" test) that the **kubelet runs on a container again and again**. When it fails, the kubelet **restarts** the container or **stops sending it traffic**, depending on the probe type.
+
+**Analogy: a restaurant manager.** **Liveness** asks "Are you awake?": a frozen waiter is replaced. **Readiness** asks "Ready to take orders?": no new customers are seated in that section, but the waiter keeps the job. **Startup** is a new chef's day-one grace period: nobody asks "are you awake?" until they're set up.
 
 | | **Liveness** | **Readiness** | **Startup** |
 |---|---|---|---|
-| Question | Alive (not stuck)? | Can it serve traffic now? | Finished starting? |
+| Question | Is it **alive** (not stuck)? | Can it **serve traffic** now? | Has it **finished starting**? |
 | On failure | **Killed and restarted**; RESTARTS climbs | **Not Ready** (`READY 0/1`, still `Running`), **removed from the Service's endpoints**; **no restart** | Killed and restarted after `failureThreshold` failures |
 | Runs | All the time, after startup succeeds | All the time, after startup succeeds | Only at the start, until it succeeds once |
 | If not defined | Assumed alive | Ready as soon as the container starts | No slow-start protection |
 
-- While a startup probe hasn't succeeded yet, **liveness and readiness are paused**. Recap (Session 07): a Service's **endpoints** are the Pod IPs it sends traffic to, and **only Ready Pods are on that list**.
+While a startup probe hasn't succeeded yet, **liveness and readiness are paused**. Recap (Session 07): a Service's **endpoints** are the Pod IPs it sends traffic to, and **only Ready Pods are on that list**.
+
+### How a probe checks, and how often
 
 | Mechanism | The kubelet… | Success means |
 |---|---|---|
 | **`httpGet`** | sends an HTTP GET to a path and port | a status code from **200 to 399** (3xx redirects pass; 404 and 500 fail) |
-| **`tcpSocket`** | opens a TCP connection to a port (like `nc -z`) | the connection opens |
-| **`exec`** | runs a command inside the container | **exit code 0** |
+| **`tcpSocket`** | tries to open a TCP connection to a port (like `nc -z`) | the connection opens |
+| **`exec`** | runs a command inside the container | the command's **exit code is 0** |
 
-(A fourth kind, `grpc`, calls a gRPC health service: awareness.) ⚠️ An `exec` command must **exist in the image**. `curl` in an image without curl exits **127** ("not found") every time, so the container restarts forever although the app is fine.
+A fourth kind, `grpc`, is awareness only. ⚠️ An `exec` command must **exist in the image**: `curl` in an image without curl exits **127** ("not found") on every check, so the container restarts forever although the app is fine.
 
-- **Timing fields (default):** `initialDelaySeconds` (0) = wait before the **first** check; `periodSeconds` (10) = check every N s; `timeoutSeconds` (1) = max time for one check.
-- `failureThreshold` (3) = failures **in a row** before acting; `successThreshold` (1) = successes to count healthy again, and it **must be 1 for liveness and startup**.
-- Time to notice a failure ≈ `failureThreshold × periodSeconds` (about 30 s). A startup probe with `failureThreshold: 30`, `periodSeconds: 10` allows **300 s** to start.
-- **Classic mistakes:** an aggressive liveness probe on a slow app causes a **restart loop** ending in `CrashLoopBackOff` (fix: add a startup probe). No readiness probe means errors on every rollout.
-- A liveness probe that checks the database makes one database blip restart every Pod at once: put dependency checks in **readiness**. And readiness never restarts a stuck app: use **liveness** for that.
-- **vs Docker's `HEALTHCHECK`** (Session 03): Docker only labels a container `(unhealthy)`. **Kubernetes ignores the Dockerfile HEALTHCHECK**: probes go in the Pod spec.
+- **`initialDelaySeconds`** (default 0) = wait before the **first** check. **`periodSeconds`** (10) = check every N s. **`timeoutSeconds`** (1) = the longest one check may take.
+- **`failureThreshold`** (3) = failures **in a row** before acting. **`successThreshold`** (1) = successes needed to count as healthy again; it **must be 1 for liveness and startup**.
+- Time to notice a failure ≈ `failureThreshold × periodSeconds` (about 30 s by default). The same product is a startup probe's maximum start time: 30 × 10 s = **300 s**.
+
+**Classic mistakes:**
+- An aggressive liveness probe on a slow-starting app kills it before it's up, again and again: a **restart loop** ending in `CrashLoopBackOff`. Fix: add a **startup probe**.
+- No readiness probe: traffic arrives too early, so users see errors on every rollout.
+- A liveness probe that checks the database: one database blip restarts **every** Pod at once. Put dependency checks in **readiness**; and remember readiness never restarts a stuck app (that's **liveness**).
+- Relying on Docker's **`HEALTHCHECK`** (Session 03): **Kubernetes ignores it**. Probes go in the Pod spec.
+
 ### 🛠 Do (~15 min): liveness restarts a container; readiness holds back traffic
-**Part A: liveness.** `code liveness-demo.yaml`. The app deletes its "health file" after 30 s to fake a freeze:
+**Part A: liveness.** `code liveness-demo.yaml`, paste, save. The app deletes its "health file" after 30 s to fake a freeze:
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -239,9 +276,9 @@ spec:
       livenessProbe:
         exec:
           command: ["cat", "/tmp/healthy"]   # exits 0 while the file exists
-        initialDelaySeconds: 5
-        periodSeconds: 5
-        failureThreshold: 3
+        initialDelaySeconds: 5               # first check 5 s after the start
+        periodSeconds: 5                     # then every 5 s
+        failureThreshold: 3                  # restart after 3 failures in a row
 ```
 ```bash
 kubectl get pods -w                       # in a SECOND tab (Cmd + T): -w = watch for changes; Ctrl + C stops
@@ -249,8 +286,8 @@ kubectl apply -f liveness-demo.yaml       # back in the first tab
 kubectl describe pod liveness-demo        # after ~80 s: read the container section and the Events
 kubectl delete pod liveness-demo --now    # clean up (--now skips most of the 30 s wait)
 ```
-- The watch tab shows `liveness-demo 1/1 Running 1 (1s ago) 78s`: RESTARTS 0 → 1, again every ~75 s, later `CrashLoopBackOff`. `describe` shows `Exit Code: 137` and `Liveness probe failed: cat: can't open '/tmp/healthy'`.
-- **Why ~75 s and 137?** Three failed probes (35–45 s) → SIGTERM, which `sh` as PID 1 ignores (Session 03). After the **grace period** (wait between SIGTERM and SIGKILL, **30 s by default**) comes SIGKILL at ~75 s. **137 = 128 + 9** (SIGKILL).
+- The watch tab shows `liveness-demo 1/1 Running 1 (1s ago) 78s`: RESTARTS 0 → 1, again every ~75 s, later `CrashLoopBackOff`. `describe` shows `Exit Code: 137` and the event `Liveness probe failed: cat: can't open '/tmp/healthy'`.
+- **Why ~75 s?** After three failed probes (35–45 s) the kubelet sends **SIGTERM**, the polite "please stop" signal. But `sh` running as PID 1 ignores it (Session 03), so Kubernetes waits out the **grace period** (the time between SIGTERM and the forced SIGKILL, **30 s by default**), and SIGKILL comes at ~75 s. **137 = 128 + 9**, and 9 is SIGKILL's number.
 
 **Part B: readiness.** `~/DevOPS/sessions/labs/09/ready-demo.yaml` holds an nginx Pod (label `app: ready-demo`) with a readinessProbe doing `httpGet` on `/ready`, port 80, every 5 s, plus a Service `ready-demo` selecting it. nginx has no `/ready` page, so it answers 404.
 ```bash
@@ -262,6 +299,7 @@ kubectl get pod ready-demo                          # 1/1 within ~5 s
 kubectl describe svc ready-demo | grep Endpoints    # 10.244.0.x:80: the Pod joined, without a restart
 kubectl delete -f ~/DevOPS/sessions/labs/09/ready-demo.yaml   # deletes everything the file created
 ```
+
 ### ✅ Check 64
 **64.1** `kubectl get pods` has shown this for 10 minutes: `api-6f9c-x2x   0/1   Running   0   10m`. What's the most likely explanation?
 - A) The readiness probe is failing on every check
@@ -280,34 +318,46 @@ kubectl delete -f ~/DevOPS/sessions/labs/09/ready-demo.yaml   # deletes everythi
 - B) Failure, because redirects mean the page moved
 - C) Success, but only if the redirect is a 302
 - D) Success, because any 2xx or 3xx code passes
+
+---
 ## Concept 65 · Autoscaling: HPA, Metrics Server, and resource requests & limits
+
 **Words you'll learn:** horizontal/vertical scaling, autoscaling, HPA (Horizontal Pod Autoscaler), metric, Metrics Server, `kubectl top`, requests, limits, millicore (`m`), throttling, OOMKilled, utilization, `ceil`, minReplicas/maxReplicas, stabilization window, flapping, VPA (Vertical Pod Autoscaler), Cluster Autoscaler.
-- **Problem:** a midnight sale brings 10× traffic, and someone must run `kubectl scale` (Session 06), then scale back later. We want **autoscaling**. **Horizontal** ("scale out") = more Pods (**HPA**); **vertical** ("scale up") = bigger Pods, usually recreated (**VPA**).
-- **Requests and limits** go under each container's `resources:`:
+
+### The problem
+A midnight sale brings 10× the traffic. With `kubectl scale` (Session 06), someone must be awake to add Pods, and remember to remove them later. We want **autoscaling**: scaling that happens by itself. **Horizontal** scaling ("scale out") adds **more Pods**, like opening more counters; that's the **HPA**'s job. **Vertical** scaling ("scale up") makes **each Pod bigger**, like giving one cook a bigger stove; that's the **VPA** (the Pods are usually recreated).
+
+### First: resource requests and limits
+Each container can say how much CPU and memory it needs, under `resources:`:
 ```yaml
       resources:
         requests:          # RESERVED for this container
-          cpu: 200m
+          cpu: 200m        # 200 millicores = a fifth of a core
           memory: 128Mi
         limits:            # the MAXIMUM it may use
-          cpu: 500m
+          cpu: 500m        # half a core
           memory: 256Mi
 ```
-- CPU is in cores: **`m` = millicores** (thousandths), so `500m` = half a core. Memory uses `Mi`/`Gi`; ⚠️ `128m` for memory means 0.128 **bytes**!
-- **Analogy: a restaurant table booking.** The request is the table held for you; the limit is "max 6 chairs". Extra CPU guests wait their turn; extra memory guests are thrown out.
+CPU is counted in cores, and **`m` = millicores** (thousandths of a core). Memory uses `Mi`/`Gi`; ⚠️ `128m` for memory would mean 0.128 **bytes**!
 
 | | **Requests** | **Limits** |
 |---|---|---|
 | Meaning | The amount **reserved** (guaranteed) | The **cap** |
-| Used by | The **scheduler** (it picks a node with room) and the **HPA** ("CPU 50%" = 50% **of the request**) | Neither |
-| Going over it | Allowed, if the node has spare room | **CPU:** **throttled** (slowed, not killed). **Memory:** **`OOMKilled`** (**OOM** = Out Of Memory: the kernel's OOM killer sends SIGKILL, exit 137) |
+| Used by | The **scheduler** (it picks a node with enough room) and the **HPA** ("CPU 50%" = 50% **of the request**) | Neither |
+| Going over it | Allowed, if the node has spare room | **CPU:** **throttled** (slowed down, not killed). **Memory:** **`OOMKilled`** |
 
-- **Metrics Server:** an **add-on** (optional extra component) that **collects current CPU/memory use** from every kubelet, keeps **only the latest numbers**, and feeds **`kubectl top`** and the HPA. No history (that's Prometheus). Your minikube addon is **already enabled**.
-- **HPA:** an object watched by a **controller** (a control loop). **Every 15 s** it compares the Pods' **current metric** with a **target** and edits the Deployment's **`replicas`**.
+**Why the difference?** CPU time can be handed out more slowly (the app just runs slower), but memory can't: if there's no RAM left, something must go. **OOM** = **Out Of Memory**; the kernel's **OOM killer** ends the process with SIGKILL, so you see **exit code 137**. **Analogy: a restaurant table booking.** The request is the table held for you; the limit is "max 6 chairs". Extra CPU guests wait their turn; extra memory guests are thrown out.
+
+### Metrics Server and the HPA
+> **Metrics Server** is an **add-on** (an optional extra component) that regularly **collects current CPU and memory use** from every kubelet. It keeps **only the latest numbers** (no history: that's Prometheus) and feeds **`kubectl top`** and the HPA. Your minikube already has it enabled.
+
+> An **HPA (Horizontal Pod Autoscaler)** is an object watched by a **controller** (a control loop). **Every 15 s** it compares the Pods' **current metric** with a **target** and changes the Deployment's **`replicas`**; the Deployment does the rest.
+
 ```
 desiredReplicas = ceil( currentReplicas × currentMetricValue ÷ targetMetricValue )
 ```
-- **`ceil`** = round **up** (3.2 → 4). **Utilization** = usage ÷ **request** (100m of a 200m request = 50%). The result stays between `minReplicas` and `maxReplicas`; within a **10% tolerance** (ratio 0.9–1.1) nothing changes.
+- **`ceil`** = round **up** to a whole number (3.2 → 4). **Utilization** = usage ÷ **request**: 100m used of a 200m request = 50%.
+- The result stays between **`minReplicas`** and **`maxReplicas`**. If current ÷ target is within **10%** of 1 (0.9 to 1.1), nothing changes.
 
 | Pods | Average CPU (target 50%) | Calculation | Result |
 |---|---|---|---|
@@ -316,34 +366,30 @@ desiredReplicas = ceil( currentReplicas × currentMetricValue ÷ targetMetricVal
 | 3 | 52% | 52 ÷ 50 = 1.04: inside the tolerance | **3** (no change) |
 | 1 | 370% | ceil(7.4) = 8, but `maxReplicas: 5` | **5** |
 
-- **Scale up fast, down slowly:** scale-down waits a **stabilization window** of **5 min (300 s)** to avoid **flapping** (adding and removing Pods back and forth). ⚠️ A manual `kubectl scale` is **overridden** by the HPA at its next check.
-- **Declarative form:** `kind: HorizontalPodAutoscaler`, `apiVersion: autoscaling/v2`, with `scaleTargetRef` (what to scale), `minReplicas`, `maxReplicas`, and a `metrics` entry for `cpu` with `averageUtilization: 50`.
-- **`TARGETS cpu: <unknown>/50%`** means the HPA can't calculate. Usually the Pods have **no CPU requests** (`missing request for cpu`). Other causes: Metrics Server broken, or the HPA was created in the last minute.
-- **Other autoscalers:** **VPA** changes each Pod's requests/limits (an add-on). The **Cluster Autoscaler** adds or removes **nodes** when Pods are **Pending** for lack of room (cloud only).
+- **Scale up fast, down slowly.** Scale-down waits a **stabilization window** of **5 minutes**. Traffic is bumpy, and without the wait the HPA would remove Pods in a lull and add them back moments later; that back-and-forth is **flapping**. ⚠️ A manual `kubectl scale` is **overridden** by the HPA at its next check.
+- **As YAML:** `kind: HorizontalPodAutoscaler` (`apiVersion: autoscaling/v2`), with `scaleTargetRef` (what to scale), `minReplicas`, `maxReplicas`, and a `metrics` entry for `cpu` with `averageUtilization: 50`. Memory works the same way (`--memory=70%` = 70% of the memory **request**).
+- **`TARGETS cpu: <unknown>/50%`** = the HPA can't calculate. Usually the Pods have **no CPU requests**, so "% of the request" means nothing (`missing request for cpu`). Otherwise: Metrics Server is broken, or the HPA is under a minute old.
+- **Other autoscalers (awareness):** the **VPA** changes each Pod's requests/limits (an add-on). The **Cluster Autoscaler** adds or removes **nodes** when Pods are stuck **Pending** for lack of room (cloud only).
+
 ### 🛠 Do (~20 min): watch the HPA scale up under load, then back down
 `~/DevOPS/sessions/labs/09/hpa-web.yaml` holds a Deployment `hpa-web` (1 nginx Pod, label `app: hpa-web`) and a Service `hpa-web` on port 80. Its CPU request is deliberately tiny (`requests: cpu: 20m`, `limits: cpu: 100m`), so a little load is a big percentage.
 ```bash
 minikube addons list | grep metrics-server        # metrics-server … enabled ✅ (if not: minikube addons enable metrics-server)
 kubectl top nodes                                 # minikube   288m   4%   3261Mi   32%
-kubectl top pods -n kube-system                   # the same per Pod; "Metrics API not available" = not ready yet
 kubectl apply -f ~/DevOPS/sessions/labs/09/hpa-web.yaml
-kubectl rollout status deployment hpa-web         # deployment "hpa-web" successfully rolled out
-kubectl autoscale deployment hpa-web --cpu-percent=50 --min=1 --max=5   # target 50% of the request, 1 to 5 Pods
+kubectl autoscale deployment hpa-web --cpu=50% --min=1 --max=5   # target 50% of the request, 1 to 5 Pods
 kubectl get hpa hpa-web -w                        # SECOND tab: cpu: <unknown>/50% for ~30–60 s, then cpu: 20%/50%
 kubectl run load-gen --image=busybox:1.36 --restart=Never -- /bin/sh -c "while true; do wget -q -O- http://hpa-web > /dev/null; done"
 kubectl top pods                                  # each hpa-web Pod's CPU, and load-gen working hard
 kubectl describe hpa hpa-web                      # Metrics 120% / 50%; ScalingLimited TooManyReplicas; SuccessfulRescale events
 kubectl delete pod load-gen --now                 # stop the load
-kubectl create deployment noreq --image=nginx:1.27                # a Deployment with NO resources
-kubectl autoscale deployment noreq --cpu=50% --min=1 --max=3      # the new spelling: no warning
-kubectl get hpa noreq                                             # stays cpu: <unknown>/50%
-kubectl describe hpa noreq | tail -3                              # missing request for cpu in container nginx
-kubectl delete hpa hpa-web noreq                                  # clean up
-kubectl delete deployment noreq
+kubectl delete hpa hpa-web                        # clean up
 kubectl delete -f ~/DevOPS/sessions/labs/09/hpa-web.yaml
 ```
-- ⚠️ **kubectl 1.37:** `--cpu-percent` works but warns it's deprecated; the new form is **`--cpu=50%`** (know both). `load-gen` (a plain Pod) loops `wget` against the Service's DNS name.
-- REPLICAS climbs 1 → 4 → **5** (`cpu: 370%/50%` wants 8, but max is 5). After you stop the load, CPU drops to `0%/50%`, but REPLICAS **stays at 5 for ~5 minutes** (the stabilization window). Then: `New size: 1; reason: All metrics below target`.
+- ⚠️ Exams and older tutorials write **`--cpu-percent=50`**; kubectl 1.37 still accepts it but warns it's deprecated. Know both spellings.
+- `load-gen` is a plain Pod (`--restart=Never`) that fetches `http://hpa-web` (the Service's DNS name) in an endless loop and throws the page away (`> /dev/null`).
+- REPLICAS climbs 1 → 4 → **5** (`cpu: 370%/50%` wants 8, but the max is 5). After you stop the load, CPU drops to `0%/50%`, yet REPLICAS **stays at 5 for ~5 minutes** (the stabilization window), then: `New size: 1; reason: All metrics below target`.
+
 ### ✅ Check 65
 **65.1** An HPA targets **60%** CPU (min 1, max 10). There are **3** Pods, and their average CPU use is **80%** of their request. How many replicas will the HPA ask for?
 - A) 3
@@ -358,19 +404,24 @@ kubectl delete -f ~/DevOPS/sessions/labs/09/hpa-web.yaml
 - D) The Deployment has only a single replica
 
 **65.3** (one line) Explain requests vs limits in contrast form, including what happens when a container goes over its CPU limit and over its memory limit.
+
+---
 ## ➕ Small but important (storage, probes, scaling): read before the quiz
+
 | Item | What it is |
 |---|---|
-| **QoS (Quality of Service) classes** | **Guaranteed** = requests equal limits for CPU and memory; **Burstable** = some set; **BestEffort** = none. A full node **evicts** (pushes off) BestEffort first, Guaranteed last |
-| **LimitRange** (awareness) | Per-namespace **default** requests/limits for containers that set none. Fixes HPA `<unknown>` |
-| **ResourceQuota** (awareness) | Per-namespace **total** cap (CPU, Pods, PVCs). Going over → `exceeded quota` |
-| **`volumeClaimTemplates`** | In a **StatefulSet** (stable Pod names `db-0`, `db-1`): one PVC per Pod (`data-db-0`), kept on scale-down |
-| **`terminationGracePeriodSeconds`** | Wait between SIGTERM and SIGKILL; **default 30 s** (`docker stop`: 10 s). A **`preStop` hook** runs just before SIGTERM |
-| **PodDisruptionBudget (PDB)** (awareness) | "Keep ≥ N Pods up during **planned** disruptions" (a node drain). No help against crashes |
-| **`subPath`** | Mount **one file** from a volume. ⚠️ No automatic ConfigMap updates |
-| **PVC expansion** | Grow a PVC only if the class has `allowVolumeExpansion: true`; **never shrink**. minikube's `standard`: `false` |
-| **Memory-based HPA** | `--memory=70%`: uses memory **requests** the same way |
+| **QoS (Quality of Service) classes** | Kubernetes sorts every Pod by its resources. **Guaranteed** = requests equal limits for CPU and memory; **Burstable** = some set; **BestEffort** = none. A node that runs out of memory **evicts** (pushes off) BestEffort Pods first, Guaranteed last |
+| **LimitRange** (awareness) | A per-namespace rule giving **default** requests/limits to containers that set none. It fixes HPA's `<unknown>` |
+| **ResourceQuota** (awareness) | A per-namespace **total** cap (CPU, number of Pods, PVCs). Going over → rejected with `exceeded quota` |
+| **`volumeClaimTemplates`** | In a **StatefulSet** (Pods with stable names like `db-0`, `db-1`): makes **one PVC per Pod** (`data-db-0`), kept even on scale-down |
+| **`terminationGracePeriodSeconds`** | The wait between SIGTERM and SIGKILL; **default 30 s** (`docker stop` waits 10 s). A **`preStop` hook** is a command run just before SIGTERM |
+| **PodDisruptionBudget (PDB)** (awareness) | "Keep at least N Pods up during **planned** disruptions", like emptying a node for an upgrade. No help against crashes |
+| **`subPath`** | Mount **one file** from a volume, not the whole folder. ⚠️ Such files don't get automatic ConfigMap updates |
+| **PVC expansion** | Grow a PVC only if its class has `allowVolumeExpansion: true`; **never shrink**. minikube's `standard`: `false` |
+
+---
 ## 📝 Session quiz (4 MCQs + 2 one-liners), from memory
+
 **Q1.** A Java app needs about **60 s** to start. Its Deployment has a livenessProbe (`httpGet /healthz`, `periodSeconds: 10`, `failureThreshold: 3`, no initial delay). The Pods restart roughly every 35 s and never become Ready. What's the best fix?
 - A) Add a readinessProbe on the same `/healthz` path
 - B) Add a startupProbe allowing about 60 s or more
@@ -398,3 +449,12 @@ kubectl delete -f ~/DevOPS/sessions/labs/09/hpa-web.yaml
 **L1.** Explain liveness vs readiness probes in contrast form, saying what Kubernetes does when each one fails.
 
 **L2.** Write the full forms of **PVC**, **HPA** and **RWX**, and say what happens to a PV with reclaim policy `Retain` when its PVC is deleted.
+
+### ✍️ Write the command
+**C1.** With **one** command, list all PersistentVolumes and PersistentVolumeClaims.
+
+**C2.** Print the file `/data/log.txt` from the container `reader` inside the Pod `shared-pod`.
+
+**C3.** Make the Deployment `web` autoscale between **2** and **8** Pods, aiming for **60%** CPU (of the request). Use the new flag spelling.
+
+**C4.** Show only the **last 3 lines** of the details of the PVC `bad-pvc` (where its Events are).

@@ -173,7 +173,7 @@ Close this file and draw the big diagram from memory in **5 minutes**; compare a
 
 **Words you'll learn (mostly recap):** project layout, health endpoint, unit test, `minikube image load`, `# nosec`, smoke test, demo script, blameless postmortem, runbook.
 
-The Session 04 counter app (Flask + Redis), taken all the way to Kubernetes, in demo order. **Project layout:**
+The counter app (a Flask web page that counts visits, keeping the count in Redis), taken all the way to Kubernetes, in demo order. **Project layout:**
 - `app.py` (plus a **`/health`** route: a **health endpoint** that answers `ok` without touching Redis, for probes and tests)
 - `test_app.py` (one **unit test**, a test of one small piece: Flask's test client checks `/health` returns 200)
 - `requirements.txt` (`flask==3.1.3`, `redis==5.0.8`), `Dockerfile`, `.dockerignore`, `compose.yaml`, `.github/workflows/ci-cd.yaml`
@@ -198,7 +198,7 @@ The Session 04 counter app (Flask + Redis), taken all the way to Kubernetes, in 
   - pip-audit reported `flask 3.0.3 PYSEC-2026-2151, Fix Versions 3.1.3`: the fix for a vulnerable dependency is to **upgrade** to the fixed version, re-run the tests, and commit the new pin.
 - ⚠️ **Never "fix" a gate by deleting the scan or adding `|| true`** (`true` always exits 0, so the gate is gone).
 - **Image tags:** skip `minikube image load` and Pods show **`ErrImagePull` / `ImagePullBackOff`** (Kubernetes looks for `docker.io/library/counter:…` on Docker Hub).
-  - A `:latest` tag makes `imagePullPolicy` default to **`Always`**, so use a real tag. In CI, **`github.sha` is the full 40-character SHA**: deploy exactly the tag you pushed (Scenario 5).
+  - A `:latest` tag makes `imagePullPolicy` default to **`Always`**, so use a real tag. In CI, **`github.sha` is the full 40-character SHA**: deploy exactly the tag you pushed (deploying the short SHA instead finds no image: `ImagePullBackOff`).
 - **Helm details:** with autoscaling on, the template **leaves out `replicas`** so the HPA controls the count.
   - Without `--wait`, `helm upgrade` reports `STATUS: deployed` as soon as Kubernetes accepts the YAML, even while the new Pod sits in `ImagePullBackOff` (the old Pods keep serving).
   - After `helm rollback`, `helm history` shows **revision 3, "Rollback to 1"**: a rollback is a **new** revision.
@@ -251,7 +251,7 @@ Run steps 2 and 5–8 plus the rollback on your minikube, using the files in `~/
 | 5 · K8s + CI | New Pod `ImagePullBackOff`; old Pods still `Running` | `kubectl describe pod <pod> -n counter` → **Events** | `Failed to pull image "ghcr.io/vansh/counter:a1b2c3d": … not found`: CI pushed the **full 40-char** `github.sha`, the deploy used the **short** SHA. (Also: a name typo; a private registry with no `imagePullSecrets` → `401 Unauthorized`) | One tag variable for push **and** deploy (`--set image.tag=<full sha>`), or `helm rollback`; private registry: a `docker-registry` Secret under `imagePullSecrets` |
 | 6 · Scheduling | `Pending` for minutes, no restarts, no IP | `kubectl describe pod <pod>` → Events | `0/1 nodes are available: 1 Insufficient cpu.`: the Pod **requests** more than any node has free. (Also: `unbound immediate PersistentVolumeClaims`; a taint/nodeSelector no node matches) | Lower the **requests**, free capacity, or add nodes. **Requests** decide scheduling; **limits** cap runtime use |
 | 7 · Service | `curl http://counter-web` from a Pod: `Connection refused` / timeout; Pods `Running` | `kubectl get endpointslices -l kubernetes.io/service-name=counter-web` (or `kubectl get endpoints counter-web`) → none | The Service **`selector`** (`app: counter`) ≠ the Pods' **labels** (`app: counter-web`), or the Pods aren't **Ready**. (Endpoints exist but fail → **`targetPort`** ≠ the app's port) | `kubectl get pods --show-labels`; make selector and labels match; fix the readiness probe; `targetPort: 5000` |
-| 8 · Ingress | `curl http://localhost:8080/` → `404 Not Found` with an `nginx` footer | `kubectl describe ingress counter-web -n counter` · `kubectl get ingressclass` | The **Host header** ≠ the rule's host (`counter.local`), so the default backend answers; or a path mismatch; or no `ingressClassName`. (**503** = no ready endpoints → #7; **connection refused** = no controller) | `curl -H "Host: counter.local" …` (or an `/etc/hosts` entry); fix the path / `pathType: Prefix`; add `ingressClassName: nginx` |
+| 8 · Ingress | `curl http://localhost:8080/` → `404 Not Found` with an `nginx` footer | `kubectl describe ingress counter-web -n counter` · `kubectl get ingressclass` | The **Host header** ≠ the rule's host (`counter.local`), so the default backend answers; or a path mismatch; or no `ingressClassName`. (**503** = no ready endpoints: the Service's selector doesn't match the Pods, or they aren't Ready; **connection refused** = no controller) | `curl -H "Host: counter.local" …` (or an `/etc/hosts` entry); fix the path / `pathType: Prefix`; add `ingressClassName: nginx` |
 | 9 · HPA | `TARGETS cpu: <unknown>/50%`, never scales | `kubectl describe hpa counter-web` → Conditions/Events | `missing request for cpu` (utilisation is a % **of the request**) or `no metrics returned from resource metrics API` (**Metrics Server** missing). Normal for the first 1–2 minutes | Add `resources.requests.cpu` (e.g. `100m`); `minikube addons enable metrics-server`; check `kubectl top pods`; wait a minute |
 | 10 · Terraform | (a) `Error acquiring the state lock … Who: runner@fv-az123 … OperationTypeApply`; (b) `plan` changes an SG **nobody changed in Git** | (a) Is that run (teammate or CI) **still going**? (b) Read which attributes change, from what to what | (a) Another apply holds the lock, or a crash left a **stale** lock. (b) **Drift**: a hand edit in the console | (a) **Wait**; only if nothing is running: `terraform force-unlock <LOCK_ID>`; never delete the state or use `-lock=false`. (b) `apply` to restore the code's version, or update the code; then stop console edits (read-only access, PRs only) |
 
@@ -295,7 +295,7 @@ Run steps 2 and 5–8 plus the rollback on your minikube, using the files in `~/
 | **Manual approval for prod** | GitHub **Environments** with required reviewers pause a job until someone approves. That's **Continuous Delivery** (prod needs a human click); with no approval it's **Continuous Deployment** |
 | `kubectl port-forward` / `minikube tunnel` / `minikube service --url` | Three ways to reach a Service from your Mac when minikube uses the docker driver |
 | `kubectl top pods` / `kubectl top nodes` | Live CPU/memory, from **Metrics Server** (same data the HPA uses) |
-| **DORA metrics** (Intro lecture; **DORA** = DevOps Research and Assessment) | **Deployment frequency**, **lead time for changes**, **change failure rate**, **time to restore service** (MTTR, Mean Time To Restore). The pipeline in Concept 90 improves all four |
+| **DORA metrics** (**DORA** = DevOps Research and Assessment) | **Deployment frequency**, **lead time for changes**, **change failure rate**, **time to restore service** (MTTR, Mean Time To Restore). The pipeline in Concept 90 improves all four |
 | **Blameless postmortem** / **runbook** | A write-up after an incident focused on causes and fixes, **not** on blaming people / a step-by-step guide for handling known problems |
 | **Smoke test** | A tiny check right after deploying ("does `/` return 200?") that catches broken releases fast |
 | **Pin actions** | `uses: actions/checkout@v4` trusts whatever the `v4` tag points to. Security-strict teams pin to a full commit SHA (`@8f4b7f8…`), because tags can be moved (the same tag-vs-digest idea as images) |
@@ -304,6 +304,19 @@ Run steps 2 and 5–8 plus the rollback on your minikube, using the files in `~/
 *Answers:* (1) Without `--wait`, Helm reports success as soon as Kubernetes **accepts** the YAML; it doesn't wait for the Pods to become Ready. (2) Canary.
 
 ---
+
+### ✍️ Write the command (whole syllabus)
+**C1.** Your `git push` to `main` was rejected with `! [rejected] main -> main (fetch first)`. Bring in your teammate's new commits by **replaying your commits on top of** the remote's `main` (no merge commit); then, only if that worked, push again.
+
+**C2.** Save the current commit's **short** SHA in a shell variable `TAG`; then, only if that worked, build an image named `counter`, tagged with that SHA, from the current folder.
+
+**C3.** You changed `app.py` in the counter project. Rebuild the images and start the Compose stack in the background; then, only if that worked, list the stack's containers and their status.
+
+**C4.** The `counter-web` Service has no endpoints. List all Pods in the `counter` namespace **with their labels shown**, so you can compare them with the Service's selector.
+
+**C5.** Deploy the local chart `./charts/counter` as the release `counter` in the namespace `counter`: install it if it doesn't exist yet, otherwise upgrade it; create the namespace if it's missing; set the value `image.tag` to the contents of `$TAG`; and report success only once the Pods are Ready.
+
+**C6.** Make a Terraform plan using the variable values in `prod.tfvars` and save it to a file named `tfplan`; then, only if planning worked, apply **exactly that saved plan**.
 
 ## 📝 Mini mock exam (60 minutes)
 

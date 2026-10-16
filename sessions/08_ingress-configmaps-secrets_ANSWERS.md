@@ -203,3 +203,18 @@ What's the fix?
 **L2.** Explain ConfigMap vs Secret in contrast form, and say why base64 isn't security.
 
 **Model answer:** *"A ConfigMap stores non-sensitive configuration as plain text, whereas a Secret stores sensitive data such as passwords base64-encoded, with extra protections (values hidden in `describe`, tmpfs mounts, RBAC, optional encryption at rest). base64 isn't security because it's only an encoding: anyone can reverse it with `base64 -d`, without any key."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Create a ConfigMap named `app-config` with two keys: `APP_COLOR` set to `blue` and `APP_MODE` set to `prod`.
+`kubectl create configmap app-config --from-literal=APP_COLOR=blue --from-literal=APP_MODE=prod`: `create configmap app-config` = make a ConfigMap with that name · `--from-literal=KEY=value` = add one key–value pair typed on the command line · repeat the flag once per key (2 flags = 2 keys, DATA 2). (Alternative: put `APP_COLOR=blue` and `APP_MODE=prod` on two lines of `app.env` and run `kubectl create configmap app-config --from-env-file=app.env`.)
+
+**C2.** Create a TLS Secret named `shop-tls` from the certificate file `tls.crt` and the key file `tls.key`.
+`kubectl create secret tls shop-tls --cert=tls.crt --key=tls.key`: `create secret tls` = make a Secret of type `kubernetes.io/tls` · `shop-tls` = its name (the Ingress's `secretName`) · `--cert=tls.crt` = the certificate file (stored as key `tls.crt`) · `--key=tls.key` = the private key file (stored as key `tls.key`).
+
+**C3.** Print the **decoded** value of the key `DB_PASSWORD` stored in the Secret `db-secret`.
+`kubectl get secret db-secret -o jsonpath='{.data.DB_PASSWORD}' | base64 -d`: `get secret db-secret` = read the Secret · `-o jsonpath='…'` = print only one field (single quotes protect the `{ }`) · `{.data.DB_PASSWORD}` = the base64 value of that key · `|` = pipe it on · `base64 -d` = decode it back to plain text (`S3cr3t!`). (Alternative: `kubectl exec <a-pod-using-it> -- cat /etc/secret/DB_PASSWORD` if the Secret is mounted as a volume.)
+
+**C4.** Without creating anything in the cluster, write the YAML for an Ingress `shop` (IngressClass `nginx`) that sends `shop.example.com/` and every path below it to port 80 of the Service `web`, into a file called `ingress.yaml`.
+`kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" --dry-run=client -o yaml > ingress.yaml`: `create ingress shop` = an Ingress named `shop` · `--class=nginx` = sets `ingressClassName: nginx` · `--rule="host/path=service:port"` = one routing rule; the trailing `*` makes it `pathType: Prefix` (no `*` = `Exact`) · `--dry-run=client` = build it locally, send nothing · `-o yaml` = print as YAML · `> ingress.yaml` = save that output to the file.

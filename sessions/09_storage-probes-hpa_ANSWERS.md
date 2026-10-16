@@ -212,3 +212,18 @@ echo 'Deploying $APP to "prod"'
 
 **L2.** Write the full forms of **PVC**, **HPA** and **RWX**, and say what happens to a PV with reclaim policy `Retain` when its PVC is deleted.
 **Model answer:** *"PVC = PersistentVolumeClaim, HPA = Horizontal Pod Autoscaler, RWX = ReadWriteMany. With reclaim policy Retain, deleting the PVC leaves the PV and its data in place in status Released; it isn't reused automatically, and an admin must clean it up or recreate it by hand."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** With **one** command, list all PersistentVolumes and PersistentVolumeClaims.
+`kubectl get pv,pvc`: `get` = list objects · `pv` = PersistentVolumes (cluster-wide) · `,` = list several kinds at once (no spaces) · `pvc` = PersistentVolumeClaims (in the current namespace, `default`). (Alternative: `kubectl get persistentvolumes,persistentvolumeclaims`.)
+
+**C2.** Print the file `/data/log.txt` from the container `reader` inside the Pod `shared-pod`.
+`kubectl exec shared-pod -c reader -- cat /data/log.txt`: `exec shared-pod` = run a command inside that Pod · `-c reader` = pick the container `reader` (needed: the Pod has two) · `--` = everything after this runs inside the container · `cat /data/log.txt` = print the file (the emptyDir is mounted at `/data` in `reader`).
+
+**C3.** Make the Deployment `web` autoscale between **2** and **8** Pods, aiming for **60%** CPU (of the request). Use the new flag spelling.
+`kubectl autoscale deployment web --cpu=60% --min=2 --max=8`: `autoscale deployment web` = create an HPA that targets `web` · `--cpu=60%` = target average CPU use of 60% of the Pods' CPU **requests** · `--min=2` = never fewer than 2 Pods · `--max=8` = never more than 8 Pods. (Alternative: `kubectl autoscale deployment web --cpu-percent=60 --min=2 --max=8`, the older spelling that kubectl 1.37 warns is deprecated.)
+
+**C4.** Show only the **last 3 lines** of the details of the PVC `bad-pvc` (where its Events are).
+`kubectl describe pvc bad-pvc | tail -3`: `describe pvc bad-pvc` = the claim's full details, Events at the bottom · `|` = pipe that text into the next command · `tail -3` = keep only the last 3 lines (e.g. `ProvisioningFailed … storageclass "fast-ssd" not found`). (Alternative: `kubectl describe pvc bad-pvc | tail -n 3`.)

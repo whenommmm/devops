@@ -213,3 +213,18 @@ The scan log shows `Total: 4 (HIGH: 3, CRITICAL: 1)`, yet `push` runs and publis
 **L2.** What is a security gate, and what exactly makes a pipeline step act as one?
 
 **Model answer:** *"A security gate is a pipeline step that decides whether the pipeline may continue, based on a security policy (e.g. no HIGH/CRITICAL vulnerabilities with a fix). It acts as a gate because the check **exits with a non-zero code** when the policy is broken (e.g. `trivy image --severity HIGH,CRITICAL --exit-code 1`): the step fails, jobs that `need` it are skipped, so nothing is pushed or deployed, and with branch protection's required status checks, the PR can't be merged."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Build an image from the Dockerfile in the current folder, named `hello-app` with the tag `3f9c2a1` (a short commit SHA).
+`docker build -t hello-app:3f9c2a1 .`: `docker build` = make an image from a Dockerfile; `-t` = tag (name) it; `hello-app` = the repository name (must be lowercase); `:3f9c2a1` = the tag; `.` = the build context, the current folder, where the Dockerfile is. (Alternative: `docker build -t hello-app:"$SHA" .` after `SHA=$(git rev-parse --short HEAD)`, as CI does.)
+
+**C2.** Give the local image `hello-app:3f9c2a1` a second name for GHCR (GitHub Container Registry) under the owner `vansh-s`, keeping the same tag, then upload it there (you're already logged in).
+`docker tag hello-app:3f9c2a1 ghcr.io/vansh-s/hello-app:3f9c2a1 && docker push ghcr.io/vansh-s/hello-app:3f9c2a1`: `docker tag SOURCE TARGET` = add a second name to the same image (no copy is made); `ghcr.io` = the registry; `vansh-s` = the owner (lowercase, or you get `repository name must be lowercase`); `hello-app:3f9c2a1` = repository + tag; `&&` = run the push only if tagging worked; `docker push` = upload that name to the registry it starts with. (Alternative: run the two commands on separate lines.)
+
+**C3.** Scan the image `hello-app:3f9c2a1` with Trivy as a security gate: report only HIGH and CRITICAL vulnerabilities, and make the command fail (exit code 1) if it finds any.
+`trivy image --severity HIGH,CRITICAL --exit-code 1 hello-app:3f9c2a1`: `trivy image` = scan a container image's OS and language packages; `--severity HIGH,CRITICAL` = report only these two levels (comma, no spaces); `--exit-code 1` = exit with 1 when anything is found (without it Trivy exits 0 and the gate never blocks); `hello-app:3f9c2a1` = the image to scan. (Alternative: add `-q` for quiet output, or put the flags in any order; don't pipe it into `tee`/`tail`, which hides the exit code.)
+
+**C4.** Check the Python packages listed in `requirements.txt` for known vulnerabilities (SCA, Software Composition Analysis).
+`pip-audit -r requirements.txt`: `pip-audit` = the Python SCA tool, which compares package versions with a vulnerability database; `-r requirements.txt` = read the packages from this requirements file (the same `-r` as `pip install -r`). It exits non-zero when it finds a vulnerability, so it works as a gate too. (Alternative: `pip-audit --requirement requirements.txt`, the long form.)

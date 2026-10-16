@@ -212,3 +212,18 @@ if [ $x > 5 ]; then echo big; else echo small; fi
 - **lab-1 and lab-3** never ran a single line of app code, so `kubectl logs` is useless there; **`describe` → Events** is the tool. (lab-1: the kubelet couldn't pull. lab-3: the scheduler couldn't place it.)
 - **lab-2** is the only one where **`kubectl logs`** gives the answer.
 - **lab-4 and lab-5** look **perfectly healthy** in `kubectl get pods`, and give the **same** client error. The difference shows only in **`describe svc`**: no endpoints at all (selector) vs endpoints on the wrong port (targetPort).
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Pod `web-7d4b9` is in CrashLoopBackOff. Show what its container printed just before it died the last time.
+`kubectl logs web-7d4b9 --previous`: `logs` = what the app printed; `web-7d4b9` = the Pod; `--previous` = read the **dead** (previous) container's output, not the freshly restarted one, which may not have printed anything yet. (Alternative: `kubectl logs web-7d4b9 -p`, the short form of `--previous`.)
+
+**C2.** Pod `web-7d4b9` has two containers, `app` and `log-shipper`. Watch the `log-shipper` container's logs live, as new lines arrive.
+`kubectl logs web-7d4b9 -c log-shipper -f`: `logs web-7d4b9` = that Pod's output; `-c log-shipper` = pick this container (without it you get the default one, `app`); `-f` = follow, keep printing new lines as they arrive until Ctrl + C. (Alternative: `kubectl logs -f web-7d4b9 -c log-shipper`; the flag order doesn't matter.)
+
+**C3.** List every event in the current namespace, ordered by time so the newest event is at the bottom.
+`kubectl get events --sort-by=.lastTimestamp`: `get events` = the namespace's logbook of what happened (Scheduled, Pulled, BackOff…); `--sort-by=` = order the list by a field; `.lastTimestamp` = each event's "last seen" time (the leading `.` means "this field of each event"), oldest first, so the newest ends up at the bottom.
+
+**C4.** Open an interactive shell (`sh`) inside the Pod `api-5f6c8`.
+`kubectl exec -it api-5f6c8 -- sh`: `exec` = run a command inside a running container; `-i` = interactive (keep your typing connected); `-t` = give it a terminal, so you get a prompt; `api-5f6c8` = the Pod; `--` = kubectl's own flags end here; `sh` = the program to run inside (type `exit` to leave). (Alternative: `kubectl exec -it api-5f6c8 -- bash`, but only if the image has bash; small images like busybox and alpine have only `sh`.)

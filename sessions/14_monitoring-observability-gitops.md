@@ -173,7 +173,7 @@ curl -s 'http://localhost:9090/api/v1/query?query=up'      # the HTTP API Grafan
 - After a minute (so `rate()` has two samples) try: `prometheus_http_requests_total` (many series: labels!) · `prometheus_http_requests_total{handler="/metrics"}` (only grows: a counter)
   - `rate(prometheus_http_requests_total{handler="/metrics"}[1m])` ≈ **0.067** (one scrape per 15 s; see the **Graph** tab)
   - `process_resident_memory_bytes / 1024 / 1024` (MB, a gauge) · `sum(up)` = 2 · `up == 0` = empty.
-- **Pull notices a dead target:** run `docker compose stop grafana`, wait ~30 s, run `up` again: `up{job="grafana"}` = **0** and Target health shows **DOWN**. Then `docker compose start grafana`. **Leave the stack running for Concept 84.**
+- **Pull notices a dead target:** run `docker compose stop grafana`, wait ~30 s, run `up` again: `up{job="grafana"}` = **0** and Target health shows **DOWN**. Then `docker compose start grafana`. **Leave the stack running: the Grafana part below uses it.**
 
 ### ✅ Check 83
 **83.1** Which of these should be exposed as a **counter**?
@@ -213,7 +213,7 @@ curl -s 'http://localhost:9090/api/v1/query?query=up'      # the HTTP API Grafan
 > ⚠️ **Data-source URL trap:** inside Grafana's container, `localhost` is **Grafana itself**, so `http://localhost:9090` gives **connection refused**. Use the Compose **service name**: **`http://prometheus:9090`**. (`localhost:9090` works only from your Mac's browser, through `-p 9090:9090`.)
 
 ### 🛠 Do (~15 min): connect Grafana to Prometheus and build a dashboard
-1. `curl -s http://localhost:3000/api/health` → `{"database": "ok", "version": "12.1.1", …}` (the stack from Concept 83 is up). Open **http://localhost:3000**, log in as **admin / admin**, and click **Skip** on the new-password screen (lab only).
+1. `curl -s http://localhost:3000/api/health` → `{"database": "ok", "version": "12.1.1", …}` (the Prometheus + Grafana Compose stack you started above is still up). Open **http://localhost:3000**, log in as **admin / admin**, and click **Skip** on the new-password screen (lab only).
 2. **Connections → Data sources → Add data source → Prometheus.** Try URL `http://localhost:9090` → **Save & test** fails (`connection refused`); change it to **`http://prometheus:9090`** → "Successfully queried the Prometheus API."
 3. **Dashboards → New → New dashboard → + Add visualization**, pick Prometheus, switch the editor to **Code**, query `up`, **Run queries**, change the visualization to **Stat** (two **1**s), title `Targets up`; then query `sum(up)` → **2**. **Save dashboard** as `My first dashboard`.
 4. **Add → Visualization**: `rate(prometheus_http_requests_total{handler="/metrics"}[1m])`, keep **Time series**, title `Scrapes per second`; time range **Last 15 minutes**, refresh **10s**: lines near 0.067. Save.
@@ -385,3 +385,12 @@ kubectl delete namespace guestbook --ignore-not-found       # then Ctrl + C the 
 **L1.** Explain monitoring vs observability in contrast form, with one example of each.
 
 **L2.** Explain push-based CD vs pull-based GitOps in contrast form, including where the cluster credentials live.
+
+### ✍️ Write the command
+**C1.** In `~/devops-practice/monitoring`, start completely fresh: remove the Prometheus + Grafana stack **including** its `grafana-data` volume, start it again in the background, then follow Grafana's logs live. Each step should run only if the one before it worked.
+
+**C2.** From your Mac's terminal, fetch Prometheus's own metrics page (port 9090, path `/metrics`) without curl's progress output, and show only the **first 3** lines that **start with** `prometheus_http_requests_total`.
+
+**C3.** Open the Argo CD web UI at `https://localhost:8080` by forwarding port 8080 on your Mac to port 443 of the `argocd-server` Service in the `argocd` namespace.
+
+**C4.** Write the PromQL query that gives the **per-second** rate of `prometheus_http_requests_total`, only for the series whose `handler` label is `/metrics`, averaged over the last **5 minutes**.

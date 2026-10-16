@@ -22,17 +22,8 @@
 | B3 | Docker I: containers vs VMs, architecture (client/daemon/API/registry), images vs containers, lifecycle & commands | UNDERSTOOD (confirmed by unbiased re-test) | Checks 10/10; quiz 4.5/6; re-test 3/4 | Oct 11 | Oct 12 warm-up |
 | B3 | Docker II: Dockerfile instructions, layers/cache, CMD vs ENTRYPOINT, RUN vs CMD, ARG vs ENV, .dockerignore, multi-stage, optimisation, USER | UNDERSTOOD (cache order + quiz traps weak) | Checks 10/10; quiz 3/6 | Oct 12 | Oct 13 warm-up |
 | B4 | Docker III: volumes vs bind mounts, networks & container-to-container, YAML, Compose | UNDERSTOOD (sub-items WEAK: container addressing; where volumes live) | Checks 5.5/8; quiz 4.5/6 (~71%) | Oct 14 | Oct 15 warm-up |
-| B4 | K8s: why orchestration | NOT STARTED | – | – | – |
-| B4 | K8s architecture (control plane, worker nodes, components) | NOT STARTED | – | – | – |
-| B4 | Desired vs actual state, controllers & reconciliation | NOT STARTED | – | – | – |
-| B4 | kubectl commands | NOT STARTED | – | – | – |
-| B4 | Manifests (apiVersion/kind/metadata/spec), declarative | NOT STARTED | – | – | – |
-| B4 | Namespaces | NOT STARTED | – | – | – |
-| B4 | Labels, selectors, matchLabels | NOT STARTED | – | – | – |
-| B5 | Pods (YAML, lifecycle, multi-container) | NOT STARTED | – | – | – |
-| B5 | ReplicaSets | NOT STARTED | – | – | – |
-| B5 | Deployments: rolling update, rollback, revisions | NOT STARTED | – | – | – |
-| B5 | DaemonSets, Jobs, CronJobs | NOT STARTED | – | – | – |
+| B5 | K8s I: why K8s, architecture (API server, etcd, scheduler, controller manager, kubelet, kube-proxy, runtime), apply flow, kubectl/manifests/namespaces | UNDERSTOOD (concepts) · WEAK: apiVersion groups, kubelet-local restarts, namespaces, writing commands | Set 1: checks 9/12, quiz 3/6 · Set 2: warm-up 3/3, checks 8.5/12, quiz 2.5/6 | Oct 15 | Oct 16 warm-up |
+| B5 | K8s II: Pods, phases, restartPolicy, labels/selectors, ReplicaSets, Deployments, rolling updates, rollback | UNDERSTOOD (concepts) · WEAK: selector logic (!=, matchLabels AND), rollout maths in scenarios | Checks 8.5/11; quiz MCQs 1/4 (L1/L2/C-tasks pending) | Oct 16 | Oct 17 warm-up |
 | B5 | Pod networking & Pod-to-Pod communication | NOT STARTED | – | – | – |
 | B5 | Services: ClusterIP / NodePort / LoadBalancer | NOT STARTED | – | – | – |
 | B5 | Ports: port / targetPort / nodePort / containerPort | NOT STARTED | – | – | – |
@@ -90,7 +81,7 @@
 | Server = the program (not just the machine) | Oct 3 | 0 (partial) | Oct 5 test | 0 |
 | Server-side libraries live on the server, not the user's machine | Oct 3 | 1 | Oct 7 (Docker) | 1 (S2 W2 ✓) |
 | Daemon definition (background service process; the "d" is only a naming habit) | Oct 4 | 1 (15.4 ½) | Oct 6 warm-up | 0 |
-| **Quotes: the OUTER quotes decide. `'...'` = all literal; `"..."` expands `$` and keeps spaces together; no quotes = expand + split at spaces** | Oct 5 | **6** (env exercise, Shell I Q4 + Q6, Shell II W1, Shell II quiz Q4, Git W2) | Oct 15 warm-up | 1 (Docker III W3 ✓, Oct 14) |
+| **Quotes: the OUTER quotes decide. `'...'` = all literal; `"..."` expands `$` and keeps spaces together; no quotes = expand + split at spaces** | Oct 5 | **7** (env exercise, Shell I Q4 + Q6, Shell II W1, Shell II quiz Q4, Git W2, K8s I W1) | Oct 17 warm-up | 1 (K8s I set-2 W1 ✓) |
 | `>` inside `[ ]` is REDIRECTION (creates a file, test becomes true); use `-gt` | Oct 7 | 1 (Shell II Q1) | Oct 8 warm-up | 0 |
 | `a && b \|\| c` is not if/else: c also runs if b fails | Oct 7 | 1 (Shell II Q5) | Oct 8 warm-up | 0 |
 | Cron uses the 24-hour clock (11 PM = 23); minute comes first | Oct 7 | 1 (Shell II L1) | Oct 8 warm-up | 0 |
@@ -106,6 +97,16 @@
 | `git status` lists WHICH files changed; `git diff` shows WHAT changed (unstaged); `--staged` for staged | Oct 11 | 1 (Docker W1) | Oct 14 warm-up | 1 (Docker II W2 ✓) |
 | ~~A stopped container keeps its NAME~~ ✅ cleared (R2 ✓ Oct 11, Docker II W3 ✓ Oct 12, and seen for real) | Oct 11 | 1 | – | 2 ✓ |
 | **Layer cache: the first changed step and EVERY step after it rebuild; copy requirements → install → copy code** | Oct 12 | 1 (Q1 not understood; 38.2 right but unsure) | Oct 15 warm-up | 1 (Docker III W2 ✓; also saw it live in the build output) |
+| **Compose/Docker DNS uses SERVICE/CONTAINER names, never image names** (DB_HOST=db, not postgres) | Oct 15 | 1 (K8s I W2) | Oct 16 warm-up | 0 |
+| **Control plane down: running Pods keep running, but NOTHING new happens (no scheduling, no rescheduling of lost Pods)** | Oct 15 | 1 (K8s I Q1: chose "lost ones move") | Oct 16 warm-up | 0 |
+| Pod journey: API server → etcd → scheduler → kubelet → runtime (stored BEFORE scheduled) | Oct 15 | 1 (48.2) | Oct 17 | 1 (set-2 L2 ✓, 48.1 ✓) |
+| A running Pod's spec is mostly immutable (only the image etc. can change); Deployments handle changes | Oct 15 | 1 (K8s I Q4) | Oct 17 | 1 (set-2 Q2 ✓) |
+| **apiVersion groups: Pod/Service/ConfigMap/Secret/Namespace = `v1`; Deployment/ReplicaSet/StatefulSet/DaemonSet = `apps/v1`; kind is case-sensitive (`Pod`)** | Oct 15 | 2 (set-2 49.2, Q4) | Oct 16 warm-up | 0 |
+| **The kubelet restarts crashed containers LOCALLY (no control plane needed); replacing/moving Pods needs the control plane** | Oct 15 | 2 (set-1 Q1, set-2 Q1) | Oct 16 warm-up | 0 |
+| Object names are unique per namespace (per kind) | Oct 15 | 1 (set-2 Q3 guess) | Oct 16 warm-up | 0 |
+| etcd quorum: needs a majority (3 → tolerates 1 failure, 5 → 2) | Oct 15 | 1 (set-2 47.3) | Oct 17 | 0 |
+| **Writing commands from a plain-language goal** (user-flagged weak area) | Oct 15 | 2 (49.3 idk; set-1 49.3 no commands); K8s II C4 skipped | every session (✍️ section) | 1 (K8s II C1–C3 all ✓, Oct 16) |
+| Answer EVERY part of a question (commands asked for, "who writes each", full forms) | Oct 15 | 3 (46.3 CNCF, 49.3 no commands, L2 who writes) | every session | 0 |
 | **Container addressing: inside a container, localhost = ITSELF; reach others by container/service NAME (Docker DNS on user-defined/Compose networks); a network name isn't an address** | Oct 14 | **3** (43.1 hedged C/A, 45.1, Q3 idk) | Oct 15 warm-up | 0 |
 | **Volumes live OUTSIDE the container** (Docker's storage area, /var/lib/docker/volumes), attached at a folder; bind mount = a host folder you choose | Oct 14 | 1 (L1: said a volume is storage inside the container) | Oct 15 warm-up | 0 |
 | YAML debugging answers must name the exact problem ("image has 3 spaces, ports 4; they must align"), not just "the indentation" | Oct 14 | 1 (44.1 ½) | Oct 16 | 0 |
@@ -116,7 +117,10 @@
 | **`$VAR`/`${VAR}` = variable · `$(cmd)` = run command · `$((math))` = arithmetic** | Oct 5 | 2 (19.3 used `$( )` for a variable; L1 said `$(date)` is arithmetic) | Oct 6 warm-up | 0 |
 | **Variable name boundary: `$A_old` looks for a variable named A_old → use `${A}_old`** | Oct 5 | 2 (19.2/19.3, Shell I Q2) | Oct 6 warm-up | 0 |
 | `bash script.sh` ignores the shebang and needs no `x` (bash reads the file); `./script.sh` needs `x` and uses the shebang | Oct 5 | 1 (L2 ½) | Oct 7 | 0 |
-| umask: files start from 666, folders from 777 | Oct 5 | 1 (S4 quiz Q2) | Oct 6 warm-up | 0 |
+| **umask: files start from 666, folders from 777** | Oct 5 | **2** (S4 quiz Q2, K8s II W3) | Oct 17 warm-up | 0 |
+| **Label selectors: `!=` also matches objects WITHOUT that label; matchLabels = AND (every pair needed; extra labels fine); template labels must match the selector, or it's rejected** | Oct 16 | 3 (51.1, 51.2, Q2) | Oct 17 warm-up | 0 |
+| Rollout maths in practice: replicas 4 + 25%/25% + broken image → 3 old + 2 new failing (max 5 total, min 3 available) | Oct 16 | 1 (Q3) | Oct 17 warm-up | 0 |
+| `kubectl apply` makes the live object match the WHOLE file (image AND replicas) | Oct 16 | 1 (Q4) | Oct 17 warm-up | 0 |
 | `export PATH=X` replaces PATH; use `"$PATH:X"` to add | Oct 5 | 1 (S4 quiz L3) | Oct 6 warm-up | 0 |
 
 ## Study habits to fix (flagged in sessions)
@@ -126,7 +130,7 @@
 | Skips the last 1–2 questions in a set | S1, S2, S3, S4 (most rounds) | Write "idk" or a rough guess; never leave blanks |
 | Answers "what" but not "why" | Log exercise Q3, 12.4, 15.4 | When a question has two parts, answer both |
 | Misreads key details ("twice", "NOT") | S2 W1; Net quiz Q2 (answered a possible cause to a NOT question) | Underline numbers and keywords (NOT, twice, most) first |
-| Hedging between two options ("A or B", "B or D") | Net quiz Q2, Q4; Git Q3; Docker Q2 | Commit to one; a hedge scores zero in the exam |
+| Hedging between two options ("A or B", "B or D") | Net quiz Q2, Q4; Git Q3; Docker Q2; K8s I 46.1, W2 | Commit to one; a hedge scores zero in the exam |
 | One-word "difference" answers ("scalability") | 9.3 | Use the "X does…, whereas Y…" form |
 
 ## Misconception log
@@ -196,6 +200,9 @@
 | Oct 5 | Shell I quiz (hard) | 4.5/9 (50%) | Q3 args-with-quotes ✓ | Q2 ✗ `$A_old` · Q4 idk (unquoted var splits) · Q6 ✗ outer quotes · L1 ✗ `$(...)` vs `${...}` · L2 ½ |
 | Oct 7 (calendar) | Shell II warm-up | 2/3 | – | W1 ✗ outer quotes · W2 ✓ · W3 ✓ (Block 1 test Q4 done) |
 | Oct 7 (calendar) | Shell II checks | 11.5/12 | check.sh predictions 4/4 · set -e fix verified on disk | 22.3 ½ (unquoted $1) |
+| "Oct 16" | K8s II (answered in chat) | Warm-up 2/3 · checks 8.5/11 · quiz MCQs 1/4 | 53.1–53.3 rollout ✓, 50.x phases ✓ | W3 ✗ umask · 51.1 ✗ != · 51.2 ✗ selector mismatch · 51.3 ½ · Q2 ✗ AND · Q3 ✗ rollout maths · Q4 ✗ apply · L1 ✓ (add why) · L2 ½ (results, not settings) · C1–C3 ✓, C4 skipped |
+| "Oct 15" | K8s I set 2 (new questions) | Warm-up 3/3 · checks 8.5/12 · quiz 2.5/6 | Q2 (Pod image mutable) ✓, L2 journey ✓ | 47.3 ✗ quorum · 49.2 ✗ + Q4 ✗ apiVersion · 49.3 idk (command) · Q1 ✗ kubelet · Q3 ✗ namespaces · L1 ½ |
+| "Oct 15" | K8s I (answered in chat) | Warm-up 1/3 · checks 9/12 · quiz 3/6 | Q3 (scheduler, hard) ✓, 48.1 ✓ | W1 ✗ quotes · W2 ✗ image vs service name · 46.1 ✗ hedged · 48.2 ✗ order · 47.3 skipped · Q1 ✗ · Q4 ✗ immutability |
 | "Oct 14" | Docker III (answered in chat) | Warm-up 3/3 · checks 5.5/8 · quiz 4.5/6 | Real port-conflict debugged live (hello vs counter-web) | 43.1 ✗ hedged · 45.1 ✗ · Q3 idk (all container addressing) · L1 ½ (volume location) · 44.1 ½ |
 | "Oct 12" | Docker II (answered in chat) | Warm-up 3/3 · checks 10/10 · quiz 3/6 | L1, L2 full marks | Q1 not understood (cache order) · Q2 ✗ shell-form PID 1 · Q3 counted ✓ (question was ambiguous; reworded) · Q4 ✗ latest |
 | "Oct 11" | Docker I (answered in chat) | Warm-up 1/3 · checks 10/10 · quiz 4.5/6 | (MCQ options length-biased; user flagged it) | W1 ✗ git status/diff · W3 ✗ function return · Q2 ✗ hedged · L2 ½ |

@@ -217,3 +217,18 @@ What causes the empty Endpoints?
 **L2.** Write the full forms of **CNI** and **FQDN**, and write the FQDN of the Service `api` in the namespace `prod`.
 
 **Model answer:** *"CNI = Container Network Interface; FQDN = Fully Qualified Domain Name. The FQDN is `api.prod.svc.cluster.local`."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** Forward port 8080 on your Mac to port 80 of the Service `web`.
+`kubectl port-forward svc/web 8080:80`: `port-forward` = tunnel a local port into the cluster through the API server · `svc/web` = the Service `web` (it picks **one** of its Pods) · `8080:80` = Mac port : Service port (like Docker's `-p HOST:CONTAINER`); it keeps the terminal busy until Ctrl + C. (Alternative: `kubectl port-forward service/web 8080:80`.)
+
+**C2.** Create a **NodePort** Service named `web-np` for the Deployment `web`. The Service listens on port 80 and sends traffic to port 8080 on the Pods.
+`kubectl expose deployment web --type=NodePort --port=80 --target-port=8080 --name=web-np`: `expose deployment web` = make a Service that copies `web`'s selector · `--type=NodePort` = also open a port (30000–32767) on every node · `--port=80` = the Service's own port · `--target-port=8080` = the port on the Pods · `--name=web-np` = the Service's name (default would be `web`). (Alternative: write a Service YAML with `type: NodePort`, `port: 80`, `targetPort: 8080` and `kubectl apply -f` it.)
+
+**C3.** Show only the `Selector` and `Endpoints` lines from the details of the Service `web-demo`.
+`kubectl describe svc web-demo | grep -E 'Selector|Endpoints'`: `describe svc web-demo` = the Service's full details · `|` = pipe that text into the next command · `grep -E` = filter lines using extended patterns · `'Selector|Endpoints'` = keep lines containing Selector **or** Endpoints (single quotes stop the shell treating `|` as a pipe).
+
+**C4.** From the already-running Pod `client`, download `http://web-demo:8080` quietly to the screen with a 3-second time limit.
+`kubectl exec client -- wget -qO- -T 3 http://web-demo:8080`: `exec client` = run one command inside the Pod `client` (like `docker exec`) · `--` = everything after this is the command to run inside · `wget` = download a URL · `-q` = quiet · `O-` = write the page to the screen · `-T 3` = give up after 3 seconds · `http://web-demo:8080` = the Service name and **Service port**.

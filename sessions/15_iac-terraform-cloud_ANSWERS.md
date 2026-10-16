@@ -202,3 +202,18 @@ echo Deploying   to   $ENV
 
 **L2.** Security group vs NACL
 **Model answer:** *"A security group is a stateful firewall attached to individual instances that has allow rules only, so replies to allowed traffic are let through automatically, whereas a NACL is a stateless firewall for a whole subnet that has numbered allow and deny rules checked in order, so return traffic (ephemeral ports) must be allowed explicitly."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** In a brand-new Terraform folder: download the providers, rewrite the `.tf` files in the standard layout, then check the configuration's syntax and references. Each step should run only if the one before it worked.
+`terraform init && terraform fmt && terraform validate`: `init` downloads the providers into `.terraform/` and writes `.terraform.lock.hcl` (it must come first, because `validate` needs it); `&&` runs the next command only if the previous one exited 0; `fmt` rewrites the `.tf` files in the standard layout (and prints the names of files it changed); `validate` checks syntax and references without contacting any cloud (`Success! The configuration is valid.`).
+
+**C2.** Make a plan with the variable `env` set to `prod` **on the command line**, and save it to a file named `tfplan` so that exactly this reviewed plan can be applied later.
+`terraform plan -var 'env=prod' -out=tfplan`: `plan` is a dry run that compares code, state and reality and changes nothing; `-var 'env=prod'` sets one input variable on the command line, the strongest source (beats the default, `TF_VAR_env` and `terraform.tfvars`), and the single quotes keep `env=prod` one word; `-out=tfplan` saves the plan to the file `tfplan`, which `terraform apply tfplan` later runs exactly, without asking again. (Alternative: `terraform plan -var="env=prod" -out=tfplan`.)
+
+**C3.** In a CI pipeline (nobody is there to type `yes`), apply the configuration in Practical A's folder; then, only if that worked, print **just the raw value** of the output `pet_name` (no quotes, no `pet_name =`).
+`terraform apply -auto-approve && terraform output -raw pet_name`: `apply` makes a fresh plan and carries it out; `-auto-approve` skips the "Enter a value: yes" question (for pipelines); `&&` = only if the apply succeeded; `output pet_name` reads that output from the state, and `-raw` prints the bare string (e.g. `native-worm`) with no quotes and no newline, handy for `NAME=$(terraform output -raw pet_name)`.
+
+**C4.** Before cleaning up, list the address of every resource Terraform is managing; then, only if that worked, delete all of them **without** the `yes` prompt.
+`terraform state list && terraform destroy -auto-approve`: `state list` prints one address per managed resource from the state (e.g. `local_file.note`, `random_pet.name`); `&&` = only if that worked; `destroy` deletes everything in the state, in reverse dependency order, and never touches what Terraform didn't create; `-auto-approve` skips the `yes` question (use with care: nothing asks you to confirm).

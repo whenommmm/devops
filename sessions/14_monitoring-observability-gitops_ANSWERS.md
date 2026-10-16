@@ -193,3 +193,18 @@
 **L2.** Explain push-based CD vs pull-based GitOps in contrast form, including where the cluster credentials live.
 
 **Model answer:** *"In push-based CD, the CI/CD pipeline pushes changes into the cluster by running `kubectl`/`helm` itself, so the cluster credentials (kubeconfig) are stored outside the cluster in CI secrets and CI must be able to reach the API server, whereas in pull-based GitOps an agent running inside the cluster (e.g. Argo CD) pulls the desired state from Git and continuously reconciles the cluster to it, so the credentials never leave the cluster, only outbound access to Git is needed, and drift from manual changes can be detected and reverted."*
+
+---
+
+## ✍️ Write the command: answers
+**C1.** In `~/devops-practice/monitoring`, start completely fresh: remove the Prometheus + Grafana stack **including** its `grafana-data` volume, start it again in the background, then follow Grafana's logs live. Each step should run only if the one before it worked.
+`docker compose down -v && docker compose up -d && docker compose logs -f grafana`: `docker compose down` stops and removes the stack's containers and network, `-v` also deletes its named volumes (`grafana-data`, so saved dashboards are gone); `&&` runs the next command only if the previous one exited 0; `up -d` creates and starts both services in the background (detached); `logs -f grafana` shows only the `grafana` service's logs and keeps following new lines (Ctrl + C stops the following, not the containers).
+
+**C2.** From your Mac's terminal, fetch Prometheus's own metrics page (port 9090, path `/metrics`) without curl's progress output, and show only the **first 3** lines that **start with** `prometheus_http_requests_total`.
+`curl -s http://localhost:9090/metrics | grep "^prometheus_http_requests_total" | head -3`: `curl -s` downloads the page silently (no progress meter); `http://localhost:9090/metrics` reaches Prometheus through the published port `9090:9090`; `|` pipes the text into the next command; `grep "^prometheus_http_requests_total"` keeps only lines that start with that name (`^` = start of line, so the `# HELP` / `# TYPE` lines are dropped); `head -3` keeps the first 3 lines. (Alternative: `curl -s localhost:9090/metrics | grep '^prometheus_http_requests_total' | head -n 3`.)
+
+**C3.** Open the Argo CD web UI at `https://localhost:8080` by forwarding port 8080 on your Mac to port 443 of the `argocd-server` Service in the `argocd` namespace.
+`kubectl port-forward svc/argocd-server -n argocd 8080:443`: `port-forward` opens a tunnel from a port on your Mac into the cluster and keeps running (Ctrl + C stops it); `svc/argocd-server` = TYPE/NAME of the target (`svc` = Service); `-n argocd` = the namespace it lives in; `8080:443` = LOCAL:REMOTE, so Mac port 8080 → the Service's HTTPS port 443 (open `https://`, then accept the self-signed certificate). (Alternative: `kubectl port-forward service/argocd-server --namespace argocd 8080:443`.)
+
+**C4.** Write the PromQL query that gives the **per-second** rate of `prometheus_http_requests_total`, only for the series whose `handler` label is `/metrics`, averaged over the last **5 minutes**.
+`rate(prometheus_http_requests_total{handler="/metrics"}[5m])`: `prometheus_http_requests_total` = the counter (it only goes up); `{handler="/metrics"}` = a label filter that keeps only the series with exactly that label value; `[5m]` = a range: all samples from the last 5 minutes; `rate(…)` = the average per-second increase over that range (it handles counter resets, needs at least 2 samples, and here gives ≈ 0.067, one scrape every 15 s).
