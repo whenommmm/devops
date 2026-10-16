@@ -81,11 +81,17 @@ Riya's team moves the counter app to Amazon's cloud. Asha builds everything by c
 ### 🛠 Do (2 min): feel idempotency
 ```bash
 mkdir -p ~/devops-practice/iac-demo && cd ~/devops-practice/iac-demo
-mkdir data; mkdir data                # the 2nd one fails: "mkdir: data: File exists"
-mkdir -p data && echo "still fine"    # -p never complains
+mkdir data; mkdir data                # 2nd one fails
+mkdir -p data && echo "still fine"    # still fine
 echo hi >> a.txt; echo hi >> a.txt; echo hi > b.txt; echo hi > b.txt
-wc -l a.txt b.txt                     # 2 a.txt (>> appends every time), 1 b.txt (> replaces)
+wc -l a.txt b.txt                     # 2 a.txt, 1 b.txt
 ```
+**What each line does:**
+- `mkdir -p … && cd …`: makes a practice folder (`-p` = also make missing parent folders, and no error if it already exists) and moves into it; `&&` = run the next command only if the one before it worked.
+- `mkdir data; mkdir data`: `;` runs the second command whatever happened to the first. The first creates `data`; the second fails with `mkdir: data: File exists`, so plain `mkdir` is **not** idempotent.
+- `mkdir -p data && echo "still fine"`: with `-p`, mkdir is happy when the folder already exists, so `still fine` prints: idempotent.
+- `echo hi >> a.txt; … echo hi > b.txt; …`: each is run twice; `>>` **appends** one more line to the end of the file every time, while `>` **replaces** the whole file every time.
+- `wc -l a.txt b.txt`: counts lines (`wc` = word count, `-l` = lines only): `2 a.txt` (not idempotent) and `1 b.txt` (idempotent), plus a total.
 ### ✅ Check 86
 
 **86.1** Which command can be run three times in a row and leave **exactly the same result** as running it once?
@@ -239,19 +245,31 @@ A **backend** is **where Terraform stores the state**. The default **local backe
 ### 🛠 Do: Practical A (pure local, ~15 min; uses Concept 87's `main.tf`)
 ```bash
 cd ~/devops-practice/tf-local
-terraform init && terraform validate && terraform plan   # Installed hashicorp/local …, random … Success! … two "+" resources; Plan: 2 to add
-terraform apply && cat output/dev-note.txt   # yes → Apply complete! 2 added; Hello, native-worm! This file was made by Terraform.
-terraform plan            # No changes. Your infrastructure matches the configuration.  ← idempotent
+terraform init && terraform validate && terraform plan   # Plan: 2 to add
+terraform apply && cat output/dev-note.txt   # type yes
+terraform plan            # No changes  ← idempotent
 terraform state list      # local_file.note, random_pet.name
-terraform output -raw pet_name; echo     # just the name (echo adds a newline)
-terraform plan -var 'greeting=Namaste'   # -/+ local_file.note, content # forces replacement; 1 to add, 1 to destroy
-printf 'greeting = "Namaste"\nenv      = "prod"\n' > prod.tfvars && terraform apply -var-file=prod.tfvars   # yes → prod-note.txt replaces dev-note.txt
-TF_VAR_greeting=Hola terraform plan -var-file=prod.tfvars   # No changes: the file beats TF_VAR_
-rm output/prod-note.txt && terraform plan -var-file=prod.tfvars   # drift: "local_file.note will be created"
-terraform apply -auto-approve -var-file=prod.tfvars   # the code wins: the file is back
-terraform destroy -var-file=prod.tfvars  # yes → the file goes first, then the pet (reverse order)
+terraform output -raw pet_name; echo     # just the name
+terraform plan -var 'greeting=Namaste'   # -/+ forces replacement
+printf 'greeting = "Namaste"\nenv      = "prod"\n' > prod.tfvars && terraform apply -var-file=prod.tfvars   # type yes
+TF_VAR_greeting=Hola terraform plan -var-file=prod.tfvars   # No changes
+rm output/prod-note.txt && terraform plan -var-file=prod.tfvars   # drift
+terraform apply -auto-approve -var-file=prod.tfvars   # the file is back
+terraform destroy -var-file=prod.tfvars  # type yes
 ```
-*Your pet name is random, so it differs from `native-worm`. The `local` provider can't edit a file in place, so a content change **forces replacement**. Single quotes keep `greeting=Namaste` as one word. `VAR=value command` sets an environment variable for that one command only.*
+**What each line does:**
+- `cd ~/devops-practice/tf-local`: go to the folder holding the `main.tf` you wrote above (the pet name + note file).
+- `terraform init && terraform validate && terraform plan`: `init` downloads the `local` and `random` providers into `.terraform/` and writes the lock file (`Installed hashicorp/local …`); `validate` checks syntax and references (`Success! The configuration is valid.`); `plan` is the dry run: two `+` resources and `Plan: 2 to add, 0 to change, 0 to destroy.`
+- `terraform apply && cat output/dev-note.txt`: shows the plan and waits; type `yes` → `Apply complete! Resources: 2 added`. `cat` then prints the new file: `Hello, native-worm! This file was made by Terraform.` (your pet name is random, so it will differ).
+- `terraform plan` (again): `No changes. Your infrastructure matches the configuration.`: running the same code a second time changes nothing (idempotent).
+- `terraform state list`: lists every resource address in the state: `local_file.note` and `random_pet.name`.
+- `terraform output -raw pet_name; echo`: prints only that output's value, without quotes or `pet_name =` (`-raw`, handy in scripts); `echo` adds the missing newline.
+- `terraform plan -var 'greeting=Namaste'`: `-var` sets a variable on the command line for this run only (the single quotes keep `greeting=Namaste` as one word). The `local` provider can't edit a file in place, so the plan shows `-/+ local_file.note` with `# forces replacement`: 1 to add, 1 to destroy.
+- `printf '…' > prod.tfvars && terraform apply -var-file=prod.tfvars`: `printf` writes a two-line variables file (`\n` = new line); `-var-file=` loads variable values from that file. Type `yes`: `prod-note.txt` replaces `dev-note.txt`.
+- `TF_VAR_greeting=Hola terraform plan -var-file=prod.tfvars`: `VAR=value command` sets an environment variable for that one command only. `TF_VAR_greeting` is weaker than a `-var-file`, so you get `No changes.`
+- `rm output/prod-note.txt && terraform plan -var-file=prod.tfvars`: deletes the file by hand (drift); `plan` refreshes, notices it's gone, and says `local_file.note will be created`.
+- `terraform apply -auto-approve -var-file=prod.tfvars`: applies **without** asking for `yes` (`-auto-approve`, as in pipelines); the code wins and the file is back.
+- `terraform destroy -var-file=prod.tfvars`: type `yes`; deletes everything in the state in **reverse** dependency order: the file first, then the pet name.
 ### ✅ Check 88
 
 **88.1** `terraform plan` shows `-/+ resource "aws_instance" "web"` with `ami = "ami-0aaa" -> "ami-0bbb" # forces replacement`. What will `apply` do to the server?
@@ -403,9 +421,12 @@ data "aws_availability_zones" "all" { state = "available" } # a DATA SOURCE: rea
 output "azs" { value = data.aws_availability_zones.all.names }
 ```
 ```bash
-terraform init && terraform validate && terraform apply   # Installed hashicorp/aws v6.x … Success! … Plan: 7 to add → type yes
-curl -s http://127.0.0.1:4566/practice-bucket             # XML with <Name>practice-bucket</Name>: the bucket exists
+terraform init && terraform validate && terraform apply   # type yes
+curl -s http://127.0.0.1:4566/practice-bucket             # the bucket exists
 ```
+**What each line does:**
+- `terraform init && terraform validate && terraform apply`: `init` downloads the big `aws` provider (`Installed hashicorp/aws v6.x`; a few minutes the first time); `validate` prints `Success! The configuration is valid.`; `apply` shows `Plan: 7 to add` (the data source creates nothing, so it isn't counted) and waits for `yes`. Every API call goes to LocalStack, not to real AWS.
+- `curl -s http://127.0.0.1:4566/practice-bucket`: asks LocalStack's S3 API for the bucket (`-s` = silent, no progress bar); XML containing `<Name>practice-bucket</Name>` proves Terraform really created it.
 - **The graph in action:** the VPC and the bucket are created **together** (neither references anything); everything else waits for the VPC. The output `azs` lists `us-east-1a` … `us-east-1f`, read by the data source.
 - **An in-place update:** add `Env = "dev"` to the VPC's `tags`, and `terraform plan` shows `~ update in-place`, `0 to add, 1 to change`: a tag can change on a live VPC, so nothing is replaced.
 - **Clean up:** `terraform destroy` (type yes; the VPC goes **last**), then `rm -rf .terraform` to free the ~770 MB.

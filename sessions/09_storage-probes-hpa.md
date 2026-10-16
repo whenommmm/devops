@@ -4,10 +4,15 @@
 
 **Before you start:**
 ```bash
-minikube status        # host, kubelet, apiserver: Running (if not: minikube start)
+minikube status        # all Running?
 kubectl get nodes      # minikube   Ready
-mkdir -p ~/devops-practice/k8s-v && cd ~/devops-practice/k8s-v   # today's folder; all YAML goes here
+mkdir -p ~/devops-practice/k8s-v && cd ~/devops-practice/k8s-v   # today's folder
 ```
+**What each line does:**
+- `minikube status`: checks that your local cluster is up: `host`, `kubelet` and `apiserver` should all say `Running` (if not: `minikube start`).
+- `kubectl get nodes`: lists the cluster's machines (nodes); you should see one, `minikube`, with STATUS `Ready`.
+- `mkdir -p … && cd …`: makes today's folder, where all the YAML goes (`-p` = also create parent folders, no error if it exists), and moves into it (`&&` = only if the first part worked).
+
 > ⚠️ **Never delete the `minikube` or `localstack` containers.** Leave namespaces you didn't create (`argocd`, `ingress-nginx`, `final-app`) and their PersistentVolume alone. Today everything runs in `default`.
 
 ---
@@ -90,13 +95,20 @@ spec:
 ```
 ```bash
 kubectl apply -f shared-pod.yaml
-kubectl get pod shared-pod                                # shared-pod   2/2   Running  (2 of 2 containers ready)
-kubectl exec shared-pod -c reader -- cat /data/log.txt    # dates the writer wrote; -c = which container, -- = the command follows
+kubectl get pod shared-pod                                # 2/2   Running
+kubectl exec shared-pod -c reader -- cat /data/log.txt    # the writer's dates
 kubectl delete pod shared-pod                             # delete the Pod…
 kubectl apply -f shared-pod.yaml                          # …and recreate it
-kubectl exec shared-pod -c reader -- cat /data/log.txt    # only 1–2 fresh dates: the emptyDir died with the old Pod
+kubectl exec shared-pod -c reader -- cat /data/log.txt    # only 1–2 fresh dates
 kubectl delete pod shared-pod                             # clean up
 ```
+**What each line does:**
+- `kubectl apply -f shared-pod.yaml`: creates the Pod from the file (`-f` = file).
+- `kubectl get pod shared-pod`: `shared-pod   2/2   Running`: READY `2/2` = 2 of its 2 containers are ready.
+- `kubectl exec shared-pod -c reader -- cat /data/log.txt`: `exec` = run one command inside the Pod; `-c reader` = in which container (needed, as this Pod has two); `--` = the command follows. You see the dates the **writer** wrote: both containers share one volume.
+- `kubectl delete pod shared-pod` + `kubectl apply -f shared-pod.yaml`: deletes the Pod, then creates it again.
+- `kubectl exec … cat /data/log.txt` (again): only 1–2 fresh dates. The old ones are gone: the emptyDir died with the old Pod.
+- `kubectl delete pod shared-pod`: clean up.
 
 ### ✅ Check 62
 **62.1** A Pod has an `app` container that writes logs to `/var/log/app`, and a `shipper` container that reads them and sends them to a log server. The logs only need to survive **container restarts**, not Pod deletion. Which volume fits best?
@@ -186,23 +198,36 @@ spec:                     # no storageClassName → the default class (dynamic p
 ```
 Ready-made in `~/DevOPS/sessions/labs/09/` (open with `code` to read): `notes-pod.yaml`, a busybox Pod that appends one timestamped line to `/data/notes.txt`, then sleeps (its volume is `persistentVolumeClaim:` → `claimName: notes-pvc`); and `bad-pvc.yaml`, a 1Gi claim for `storageClassName: fast-ssd`, a class minikube doesn't have.
 ```bash
-kubectl get storageclass                         # standard (default)   k8s.io/minikube-hostpath   Delete   Immediate (= bind at once)
+kubectl get storageclass                         # standard (default) …
 kubectl apply -f notes-pvc.yaml
-kubectl get pvc notes-pvc                        # STATUS Bound, VOLUME pvc-33b7… (the auto-made PV), 100Mi, RWO
+kubectl get pvc notes-pvc                        # Bound
 kubectl apply -f ~/DevOPS/sessions/labs/09/notes-pod.yaml
-kubectl exec notes-pod -- cat /data/notes.txt    # written at Thu Oct 15 04:20:55 UTC 2026
+kubectl exec notes-pod -- cat /data/notes.txt    # one line
 kubectl delete pod notes-pod
-kubectl get pvc notes-pvc                        # still Bound: the claim doesn't care that the Pod is gone
+kubectl get pvc notes-pvc                        # still Bound
 kubectl apply -f ~/DevOPS/sessions/labs/09/notes-pod.yaml   # a new Pod (give it a few seconds)
-kubectl exec notes-pod -- cat /data/notes.txt    # TWO lines now: the data outlived the Pod
-kubectl get pv,pvc                               # a comma lists two kinds; your PV: Delete, Bound, default/notes-pvc
+kubectl exec notes-pod -- cat /data/notes.txt    # TWO lines now
+kubectl get pv,pvc                               # PVs + PVCs
 kubectl apply -f ~/DevOPS/sessions/labs/09/bad-pvc.yaml
-kubectl get pvc bad-pvc                          # STATUS Pending
-kubectl describe pvc bad-pvc | tail -3           # ProvisioningFailed … storageclass "fast-ssd" not found
+kubectl get pvc bad-pvc                          # Pending
+kubectl describe pvc bad-pvc | tail -3           # the Events
 kubectl delete pod notes-pod                     # clean up: Pods first, then claims
 kubectl delete pvc notes-pvc bad-pvc
-kubectl get pv                                   # your pvc-33b7… PV is gone too: reclaim policy Delete
+kubectl get pv                                   # your PV is gone too
 ```
+**What each line does:**
+- `kubectl get storageclass`: lists the storage categories. You should see `standard (default)   k8s.io/minikube-hostpath   Delete   Immediate`: the default class, its provisioner, reclaim policy `Delete`, and `Immediate` = bind as soon as a claim arrives.
+- `kubectl apply -f notes-pvc.yaml`: creates the claim (`-f` = file).
+- `kubectl get pvc notes-pvc`: STATUS `Bound`, VOLUME `pvc-33b7…` (the PV the provisioner made automatically), `100Mi`, `RWO`.
+- `kubectl apply -f ~/DevOPS/sessions/labs/09/notes-pod.yaml`: starts the ready-made Pod that uses the claim.
+- `kubectl exec notes-pod -- cat /data/notes.txt`: runs `cat` inside the Pod (everything after `--` is the command). One line, like `written at Thu Oct 15 04:20:55 UTC 2026`.
+- `kubectl delete pod notes-pod` + `kubectl get pvc notes-pvc`: the Pod is gone, but the claim is still `Bound`: it doesn't care about the Pod.
+- `kubectl apply -f …/notes-pod.yaml` + `kubectl exec … cat /data/notes.txt`: a new Pod (give it a few seconds) appends its own line, so you now see **two** lines: the data outlived the Pod.
+- `kubectl get pv,pvc`: lists PVs and PVCs together (the comma = two kinds at once). Your PV shows `Delete`, `Bound`, and the claim `default/notes-pvc`.
+- `kubectl apply -f …/bad-pvc.yaml` + `kubectl get pvc bad-pvc`: a claim for the missing class `fast-ssd`; its STATUS stays `Pending`.
+- `kubectl describe pvc bad-pvc | tail -3`: `tail -3` = only the last 3 lines, where the Events are: `ProvisioningFailed … storageclass "fast-ssd" not found`.
+- `kubectl delete pod notes-pod` + `kubectl delete pvc notes-pvc bad-pvc`: clean up: Pods first, then the claims they use.
+- `kubectl get pv`: your `pvc-33b7…` PV is gone too, because its reclaim policy is `Delete`.
 
 ### ✅ Check 63
 **63.1** A cluster uses **static** provisioning only. Available PVs: `pv-a` (10Gi, RWO) and `pv-b` (3Gi, RWX), both in the same class. A new PVC asks for **5Gi with RWX**. What happens?
@@ -281,24 +306,39 @@ spec:
         failureThreshold: 3                  # restart after 3 failures in a row
 ```
 ```bash
-kubectl get pods -w                       # in a SECOND tab (Cmd + T): -w = watch for changes; Ctrl + C stops
+kubectl get pods -w                       # in a SECOND tab (Cmd + T)
 kubectl apply -f liveness-demo.yaml       # back in the first tab
-kubectl describe pod liveness-demo        # after ~80 s: read the container section and the Events
-kubectl delete pod liveness-demo --now    # clean up (--now skips most of the 30 s wait)
+kubectl describe pod liveness-demo        # after ~80 s
+kubectl delete pod liveness-demo --now    # clean up
 ```
+**What each line does:**
+- `kubectl get pods -w`: (in a second tab, Cmd + T) `-w` = watch: it keeps running and prints a new line whenever a Pod changes. Ctrl + C stops it.
+- `kubectl apply -f liveness-demo.yaml`: (back in the first tab) creates the Pod.
+- `kubectl describe pod liveness-demo`: after about 80 s, read the container section (`Last State`, `Exit Code`, `Restart Count`) and the Events at the bottom.
+- `kubectl delete pod liveness-demo --now`: clean up; `--now` skips most of the 30 s wait.
+
+**What you'll see:**
 - The watch tab shows `liveness-demo 1/1 Running 1 (1s ago) 78s`: RESTARTS 0 → 1, again every ~75 s, later `CrashLoopBackOff`. `describe` shows `Exit Code: 137` and the event `Liveness probe failed: cat: can't open '/tmp/healthy'`.
 - **Why ~75 s?** After three failed probes (35–45 s) the kubelet sends **SIGTERM**, the polite "please stop" signal. But `sh` running as PID 1 ignores it (Linux gives PID 1 no default SIGTERM handling), so Kubernetes waits out the **grace period** (the time between SIGTERM and the forced SIGKILL, **30 s by default**), and SIGKILL comes at ~75 s. **137 = 128 + 9**, and 9 is SIGKILL's number.
 
 **Part B: readiness.** `~/DevOPS/sessions/labs/09/ready-demo.yaml` holds an nginx Pod (label `app: ready-demo`) with a readinessProbe doing `httpGet` on `/ready`, port 80, every 5 s, plus a Service `ready-demo` selecting it. nginx has no `/ready` page, so it answers 404.
 ```bash
 kubectl apply -f ~/DevOPS/sessions/labs/09/ready-demo.yaml
-kubectl get pod ready-demo                          # ready-demo   0/1   Running   0  (not ready, no restarts)
-kubectl describe svc ready-demo | grep Endpoints    # Endpoints:   (empty: no Pod gets traffic)
-kubectl exec ready-demo -- sh -c 'echo ok > /usr/share/nginx/html/ready'   # create the page the probe asks for
-kubectl get pod ready-demo                          # 1/1 within ~5 s
-kubectl describe svc ready-demo | grep Endpoints    # 10.244.0.x:80: the Pod joined, without a restart
-kubectl delete -f ~/DevOPS/sessions/labs/09/ready-demo.yaml   # deletes everything the file created
+kubectl get pod ready-demo                          # 0/1   Running   0
+kubectl describe svc ready-demo | grep Endpoints    # empty
+kubectl exec ready-demo -- sh -c 'echo ok > /usr/share/nginx/html/ready'   # create the page
+kubectl get pod ready-demo                          # 1/1
+kubectl describe svc ready-demo | grep Endpoints    # 10.244.0.x:80
+kubectl delete -f ~/DevOPS/sessions/labs/09/ready-demo.yaml
 ```
+**What each line does:**
+- `kubectl apply -f …/ready-demo.yaml`: creates the Pod and the Service from one file.
+- `kubectl get pod ready-demo`: `ready-demo   0/1   Running   0`: running but **not ready**, and RESTARTS stays 0 (readiness never restarts).
+- `kubectl describe svc ready-demo | grep Endpoints`: keeps only the `Endpoints:` line (`grep` = show matching lines), which is empty: no Pod gets traffic.
+- `kubectl exec ready-demo -- sh -c 'echo ok > /usr/share/nginx/html/ready'`: `sh -c '…'` runs the quoted text as a shell command inside the Pod (needed for the `>`). It creates the `/ready` page the probe asks for, in nginx's web folder.
+- `kubectl get pod ready-demo`: `1/1` within about 5 s, once the next probe passes.
+- `kubectl describe svc ready-demo | grep Endpoints`: now `10.244.0.x:80`: the Pod joined the Service, without a restart.
+- `kubectl delete -f …/ready-demo.yaml`: deletes everything the file created (the Pod and the Service).
 
 ### ✅ Check 64
 **64.1** `kubectl get pods` has shown this for 10 minutes: `api-6f9c-x2x   0/1   Running   0   10m`. What's the most likely explanation?
@@ -374,20 +414,31 @@ desiredReplicas = ceil( currentReplicas × currentMetricValue ÷ targetMetricVal
 ### 🛠 Do (~20 min): watch the HPA scale up under load, then back down
 `~/DevOPS/sessions/labs/09/hpa-web.yaml` holds a Deployment `hpa-web` (1 nginx Pod, label `app: hpa-web`) and a Service `hpa-web` on port 80. Its CPU request is deliberately tiny (`requests: cpu: 20m`, `limits: cpu: 100m`), so a little load is a big percentage.
 ```bash
-minikube addons list | grep metrics-server        # metrics-server … enabled ✅ (if not: minikube addons enable metrics-server)
-kubectl top nodes                                 # minikube   288m   4%   3261Mi   32%
+minikube addons list | grep metrics-server        # enabled?
+kubectl top nodes                                 # the node's CPU + memory use
 kubectl apply -f ~/DevOPS/sessions/labs/09/hpa-web.yaml
-kubectl autoscale deployment hpa-web --cpu=50% --min=1 --max=5   # target 50% of the request, 1 to 5 Pods
-kubectl get hpa hpa-web -w                        # SECOND tab: cpu: <unknown>/50% for ~30–60 s, then cpu: 20%/50%
+kubectl autoscale deployment hpa-web --cpu=50% --min=1 --max=5   # creates the HPA
+kubectl get hpa hpa-web -w                        # SECOND tab
 kubectl run load-gen --image=busybox:1.36 --restart=Never -- /bin/sh -c "while true; do wget -q -O- http://hpa-web > /dev/null; done"
-kubectl top pods                                  # each hpa-web Pod's CPU, and load-gen working hard
-kubectl describe hpa hpa-web                      # Metrics 120% / 50%; ScalingLimited TooManyReplicas; SuccessfulRescale events
+kubectl top pods                                  # each Pod's CPU
+kubectl describe hpa hpa-web                      # metrics, conditions, events
 kubectl delete pod load-gen --now                 # stop the load
 kubectl delete hpa hpa-web                        # clean up
 kubectl delete -f ~/DevOPS/sessions/labs/09/hpa-web.yaml
 ```
-- ⚠️ Exams and older tutorials write **`--cpu-percent=50`**; kubectl 1.37 still accepts it but warns it's deprecated. Know both spellings.
-- `load-gen` is a plain Pod (`--restart=Never`) that fetches `http://hpa-web` (the Service's DNS name) in an endless loop and throws the page away (`> /dev/null`).
+**What each line does:**
+- `minikube addons list | grep metrics-server`: shows only the metrics-server line of minikube's add-on list; it should say `enabled ✅` (if not: `minikube addons enable metrics-server`).
+- `kubectl top nodes`: the node's current CPU and memory use, from Metrics Server, e.g. `minikube   288m   4%   3261Mi   32%`.
+- `kubectl apply -f …/hpa-web.yaml`: creates the Deployment and the Service.
+- `kubectl autoscale deployment hpa-web --cpu=50% --min=1 --max=5`: creates an HPA for it. `--cpu=50%` = aim for 50% of the CPU **request**; `--min`/`--max` = never fewer than 1 or more than 5 Pods. ⚠️ Exams and older tutorials write **`--cpu-percent=50`**; kubectl 1.37 still accepts it but warns it's deprecated. Know both spellings.
+- `kubectl get hpa hpa-web -w`: (in a second tab) watches the HPA (`-w` = keep printing changes). TARGETS shows `cpu: <unknown>/50%` for 30–60 s, then e.g. `cpu: 20%/50%`.
+- `kubectl run load-gen … -- /bin/sh -c "while true; do wget -q -O- http://hpa-web > /dev/null; done"`: a plain Pod (`--restart=Never`) that fetches `http://hpa-web` (the Service's DNS name) in an endless loop. `-q -O-` = quietly print the page, and `> /dev/null` throws it away.
+- `kubectl top pods`: each Pod's current CPU and memory: the `hpa-web` Pods, and `load-gen` working hard.
+- `kubectl describe hpa hpa-web`: shows `Metrics … 120% / 50%`, the condition `ScalingLimited TooManyReplicas` (it hit the max) and `SuccessfulRescale` events.
+- `kubectl delete pod load-gen --now`: stops the load (`--now` = skip most of the grace period).
+- `kubectl delete hpa hpa-web` + `kubectl delete -f …/hpa-web.yaml`: clean up the HPA, then the Deployment and Service.
+
+**What you'll see:**
 - REPLICAS climbs 1 → 4 → **5** (`cpu: 370%/50%` wants 8, but the max is 5). After you stop the load, CPU drops to `0%/50%`, yet REPLICAS **stays at 5 for ~5 minutes** (the stabilization window), then: `New size: 1; reason: All metrics below target`.
 
 ### ✅ Check 65

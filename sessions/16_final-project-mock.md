@@ -12,6 +12,11 @@ colima status          # "colima is running"
 minikube status        # host, kubelet, apiserver: Running
 kubectl get nodes      # minikube   Ready
 ```
+**What each line does:**
+- `colima status`: checks that Colima (the Linux VM that runs Docker on your Mac) is up; you should see `colima is running` (if not, `colima start`).
+- `minikube status`: checks your local Kubernetes cluster; host, kubelet and apiserver should all say `Running` (if not, `minikube start`).
+- `kubectl get nodes`: lists the cluster's machines; the single node `minikube` should show `Ready`, meaning it can run Pods.
+
 > ⚠️ **Never delete the `minikube` or `localstack` containers.** The 🛠 tasks in this session are optional re-runs of things you've already done; skip them if you're short of time. The drawing exercise and the mock are **not** optional.
 > Leave existing namespaces and Argo CD apps alone too: only delete what you create here (the `counter` release and namespace).
 

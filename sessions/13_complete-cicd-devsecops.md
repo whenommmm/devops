@@ -4,11 +4,16 @@
 
 **Before you start:** today you join Docker + Kubernetes + GitHub Actions + security. (**CI/CD** = Continuous Integration / Continuous Delivery or Deployment; **PR** = pull request.)
 ```bash
-colima status                 # Docker must be running
-minikube status               # Kubernetes must be running (minikube start if it isn't)
-docker images hello-app       # your Flask "Hello from the … container!" image (missing? rebuild it below)
-cd ~/devops-practice/hello-app && docker build -t hello-app:1.0 .   # only if hello-app:1.0 is missing (needs app.py, requirements.txt and the Dockerfile you wrote there)
+colima status                 # Docker running?
+minikube status               # Kubernetes running?
+docker images hello-app       # your Flask image
+cd ~/devops-practice/hello-app && docker build -t hello-app:1.0 .   # only if hello-app:1.0 is missing
 ```
+**What each line does:**
+- `colima status`: checks Colima, the small Linux VM that runs Docker on your Mac; it should say it's running (if not, `colima start`).
+- `minikube status`: checks your local Kubernetes cluster; expect `host`, `kubelet` and `apiserver` all `Running`. If not, run `minikube start` and wait a minute or two.
+- `docker images hello-app`: lists local images named `hello-app`, your Flask "Hello from the … container!" app. You want a row with TAG `1.0`.
+- `cd … && docker build -t hello-app:1.0 .`: **only if that row is missing**. Rebuilds the image; `-t` = name:tag; `.` = use the current folder (it needs the `app.py`, `requirements.txt` and `Dockerfile` you wrote there).
 ⚠️ **Never remove the `minikube` or `localstack` containers.** Text after `#` in commands is a note for you: don't type it (your zsh would pass it on as arguments), or run `setopt interactivecomments` first.
 
 ## 🔁 Warm-up
@@ -73,14 +78,23 @@ A **container registry** is a server that stores images, which you `docker push`
 ### 🛠 Do (~10 min): tag an image the way CI does
 ```bash
 cd ~/devops-practice/hello-app
-git init -b main && git add . && git commit -m "hello-app: ready for CI"   # "Reinitialized…" / "nothing to commit" is fine
-SHA=$(git rev-parse --short HEAD); echo "$SHA"    # short SHA of HEAD (the commit you're on), e.g. 3f9c2a1
-docker build -t hello-app:"$SHA" .                # tag = your SHA ("…" lets $SHA expand)
-docker images hello-app                           # new tag; often the SAME image ID as before: one image, two labels
-docker tag hello-app:"$SHA" Hello-App:"$SHA"      # error: repository name (library/Hello-App) must be lowercase
-docker tag hello-app:"$SHA" hello-app:Feature_1   # works: uppercase is fine in the TAG
-docker rmi hello-app:Feature_1                    # removes only that extra label
+git init -b main && git add . && git commit -m "hello-app: ready for CI"   # make a commit
+SHA=$(git rev-parse --short HEAD); echo "$SHA"    # e.g. 3f9c2a1
+docker build -t hello-app:"$SHA" .                # tag = your SHA
+docker images hello-app                           # see the new tag
+docker tag hello-app:"$SHA" Hello-App:"$SHA"      # error: must be lowercase
+docker tag hello-app:"$SHA" hello-app:Feature_1   # works
+docker rmi hello-app:Feature_1                    # remove that label
 ```
+**What each line does:**
+- `cd ~/devops-practice/hello-app`: the folder with your Flask app and Dockerfile.
+- `git init -b main && git add . && git commit -m "…"`: makes the folder a Git repo with first branch `main` (`-b`), stages every file (`.`), and commits (`-m` = message), so there's a commit SHA to use. `Reinitialized…` or `nothing to commit` just means it was done before: fine.
+- `SHA=$(git rev-parse --short HEAD); echo "$SHA"`: `$( … )` captures a command's output into the variable `SHA`; `git rev-parse --short HEAD` = the 7-character short SHA of `HEAD`, the commit you're on. Prints e.g. `3f9c2a1`.
+- `docker build -t hello-app:"$SHA" .`: builds the image tagged with that SHA, as CI does; the double quotes still let `$SHA` expand.
+- `docker images hello-app`: shows the new tag, often with the **same IMAGE ID** as `1.0` (nothing changed, so Docker reused its cache): one image, two labels.
+- `docker tag hello-app:"$SHA" Hello-App:"$SHA"`: tries to add a name with capitals in the **repository** part → error: `repository name (library/Hello-App) must be lowercase`.
+- `docker tag hello-app:"$SHA" hello-app:Feature_1`: works, because upper case is allowed in the **tag** (after the `:`).
+- `docker rmi hello-app:Feature_1`: removes only that extra label (`Untagged: …`); the image stays, since other tags still point to it.
 *(`docker tag SOURCE NEWNAME` gives an existing image another name, without copying it. CI would name it `ghcr.io/<you-in-lowercase>/hello-app:<sha>` and upload it with `docker push`.)*
 ### ✅ Check 78
 **78.1** Production runs `ghcr.io/vansh/hello-app:latest`, and a bug appears. Why would a tag like `hello-app:3f9c2a1` (a commit SHA) have helped?
@@ -133,17 +147,28 @@ Your kubeconfig says `server: https://127.0.0.1:32771`. `127.0.0.1` is **loopbac
 In class: **GitHub Actions builds, scans and pushes to GHCR; deploying to local Kubernetes is practised by hand** (below).
 ### 🛠 Do (~10 min): rehearse a pipeline's deploy commands on minikube
 ```bash
-kubectl config view --minify | grep server                          # server: https://127.0.0.1:<port> (loopback)
-kubectl create namespace s13 && kubectl create deployment web --image=nginx:1.27 --replicas=2 -n s13   # 2 Pods; container named nginx
-kubectl rollout status deployment/web -n s13                        # "successfully rolled out"
-kubectl set image deployment/web nginx=nginx:1.28 -n s13            # container nginx → image nginx:1.28
-kubectl rollout status deployment/web -n s13 --timeout=60s; echo "exit code: $?"   # exit code: 0 → a pipeline continues
-kubectl set image deployment/web nginx=nginx:9.99 -n s13            # a bad release: this tag doesn't exist
-kubectl rollout status deployment/web -n s13 --timeout=30s; echo "exit code: $?"   # timed out… exit code: 1 → step red
-kubectl get pods -n s13                                             # 2 old Pods Running + 1 ImagePullBackOff: the old version kept serving
-kubectl rollout undo deployment/web -n s13 && kubectl rollout status deployment/web -n s13   # back to nginx:1.28: rolled out
+kubectl config view --minify | grep server                          # the API server address
+kubectl create namespace s13 && kubectl create deployment web --image=nginx:1.27 --replicas=2 -n s13   # 2 Pods
+kubectl rollout status deployment/web -n s13                        # wait until ready
+kubectl set image deployment/web nginx=nginx:1.28 -n s13            # a good release
+kubectl rollout status deployment/web -n s13 --timeout=60s; echo "exit code: $?"   # exit code: 0
+kubectl set image deployment/web nginx=nginx:9.99 -n s13            # a bad release
+kubectl rollout status deployment/web -n s13 --timeout=30s; echo "exit code: $?"   # exit code: 1
+kubectl get pods -n s13                                             # 1 ImagePullBackOff
+kubectl rollout undo deployment/web -n s13 && kubectl rollout status deployment/web -n s13   # back to 1.28
 kubectl delete namespace s13                                        # clean up
 ```
+**What each line does:**
+- `kubectl config view --minify | grep server`: prints your kubeconfig; `--minify` = only the parts for the current context; `grep server` keeps the API server line: `server: https://127.0.0.1:<port>`, a loopback address that only your Mac can reach.
+- `kubectl create namespace s13 && kubectl create deployment web --image=nginx:1.27 --replicas=2 -n s13`: makes a practice namespace, then a Deployment `web` with 2 Pods (`--replicas=2`) of `nginx:1.27`; `-n` = in namespace `s13`. kubectl names the container after the image: `nginx`.
+- `kubectl rollout status deployment/web -n s13`: waits until the rollout is finished: `deployment "web" successfully rolled out`.
+- `kubectl set image deployment/web nginx=nginx:1.28 -n s13`: what a pipeline's deploy step does: container `nginx` (left of `=`) gets image `nginx:1.28`, which starts a rolling update. It returns at once.
+- `kubectl rollout status … --timeout=60s; echo "exit code: $?"`: waits at most 60 s, then prints the exit code (`;` = run the next command no matter what; `$?` = the last exit code). `exit code: 0` → a pipeline would continue.
+- `kubectl set image … nginx=nginx:9.99 …`: a bad release (this tag doesn't exist), yet the command still succeeds.
+- `kubectl rollout status … --timeout=30s; echo …`: after 30 s, `error: timed out waiting for the condition` and `exit code: 1` → in a pipeline this step goes red.
+- `kubectl get pods -n s13`: 2 old Pods Running + 1 new Pod in `ImagePullBackOff`: the rolling update kept the old version serving.
+- `kubectl rollout undo … && kubectl rollout status …`: puts the Deployment back to its previous Pod template (`nginx:1.28`), then waits for `successfully rolled out`.
+- `kubectl delete namespace s13`: deletes the practice namespace and everything in it.
 ### ✅ Check 79
 **79.1** A deploy job runs `kubectl set image deployment/hello hello=ghcr.io/vansh/hello-app:${{ github.sha }}`. The job is green ✅, but the new Pods are stuck in `ImagePullBackOff`. What should the job have included?
 - A) A `kubectl rollout status --timeout` step
@@ -224,16 +249,26 @@ SCA compares every package version (transitive ones too) with databases of known
 ### 🛠 Do (~10 min): run an SCA scan and a secret scan, both in containers
 Both tools run in throwaway containers (`--rm` = delete afterwards; `-v "$PWD":/src` = bind-mount this folder at `/src`; `-w /src` = start there). Ignore pip's warning about running as root.
 ```bash
-cd ~/devops-practice/hello-app && cat requirements.txt   # flask==3.0.3 (the version pinned when you first built the image)
-docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r requirements.txt"; echo "exit code: $?"   # flask 3.0.3  PYSEC-2026-2151  3.1.3 … exit code: 1
-sed -i '' 's/flask==3.0.3/flask==3.1.3/' requirements.txt   # the fix: bump to the fixed version (-i '' is the macOS form)
-docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r requirements.txt"; echo "exit code: $?"   # No known vulnerabilities found, exit code: 0
-docker build -t hello-app:2.0 .                                  # rebuild with the fixed Flask (Trivy scans it in the next section)
+cd ~/devops-practice/hello-app && cat requirements.txt   # flask==3.0.3
+docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r requirements.txt"; echo "exit code: $?"   # exit code: 1
+sed -i '' 's/flask==3.0.3/flask==3.1.3/' requirements.txt   # the fix
+docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r requirements.txt"; echo "exit code: $?"   # exit code: 0
+docker build -t hello-app:2.0 .                                  # rebuild with the fixed Flask
 mkdir -p ~/devops-practice/s13-secrets && cd ~/devops-practice/s13-secrets
 printf 'GITHUB_TOKEN = "ghp_4fT9xQ2mZ7LbV1nK8sR3wY6pD0cH5jE2aU9i"\n' > settings.py      # a FAKE token
-docker run --rm -v "$PWD":/scan ghcr.io/gitleaks/gitleaks:v8.30.1 dir -v /scan; echo "exit code: $?"   # RuleID: github-pat … leaks found: 1, exit code: 1
+docker run --rm -v "$PWD":/scan ghcr.io/gitleaks/gitleaks:v8.30.1 dir -v /scan; echo "exit code: $?"   # exit code: 1
 cd ~ && rm -rf ~/devops-practice/s13-secrets                     # clean up
 ```
+**What each line does:**
+- `cd ~/devops-practice/hello-app && cat requirements.txt`: shows the pinned libraries: `flask==3.0.3`, the version from when you first built the image.
+- `docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "…"; echo "exit code: $?"`: a throwaway Python container with this folder (`$PWD`) mounted at `/src`. `sh -c "…"` runs the quoted commands inside: install pip-audit quietly (`-q`), then check every package listed in the file (`-r`). Expect `flask 3.0.3  PYSEC-2026-2151  3.1.3` (package, advisory ID, fixed version) and `exit code: 1`.
+- `sed -i '' 's/flask==3.0.3/flask==3.1.3/' requirements.txt`: the fix. Edits the file in place (`-i ''` = the macOS form, no backup file); `s/old/new/` = replace the text, so Flask is bumped to the fixed version.
+- the second `docker run … pip-audit …`: the same scan again: `No known vulnerabilities found`, `exit code: 0`.
+- `docker build -t hello-app:2.0 .`: rebuilds the image with the fixed Flask as `hello-app:2.0` (Trivy scans it in the next section).
+- `mkdir -p … && cd …`: a scratch folder for the secret-scan demo.
+- `printf 'GITHUB_TOKEN = "ghp_…"\n' > settings.py`: writes a file containing a **fake** GitHub token; it starts with `ghp_` like real ones, which is the pattern scanners look for.
+- `docker run --rm -v "$PWD":/scan ghcr.io/gitleaks/gitleaks:v8.30.1 dir -v /scan; echo …`: runs gitleaks from its official image on the folder mounted at `/scan`; `dir` = scan a plain folder (not Git history); `-v` = verbose, show each finding. Expect `RuleID: github-pat`, `leaks found: 1`, `exit code: 1`.
+- `cd ~ && rm -rf ~/devops-practice/s13-secrets`: leave the folder and delete it (`-r` = with everything inside, `-f` = don't ask).
 Both scanners **exit 1** when they find something, so in CI the step would **fail** (a gate), and in a pre-commit hook gitleaks would cancel the commit. (`PYSEC-…` is the Python advisory ID; Trivy calls the same Flask issue `CVE-2026-27205`.)
 ### ✅ Check 80
 **80.1** Which of these needs the application to be **running** in order to find problems?
@@ -294,17 +329,28 @@ docker build ─► trivy image --severity HIGH,CRITICAL --exit-code 1 app:sha
 - **Image signing** with **cosign**: a digital signature proving **who built** an image and that it **hasn't been changed** since (`cosign sign` in CI, `cosign verify` before deploying).
 ### 🛠 Do (~15 min): scan images with Trivy on your Mac
 ```bash
-brew install trivy && trivy --version                          # Version: 0.75.0 or newer
-export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"  # ⚠️ Trivy needs this to find Colima's Docker (this Terminal only; rerun if an image "can't be found")
-trivy image -q --severity HIGH,CRITICAL nginx:1.27    | grep Total   # first run downloads the DB (~130 MB); Total: 174 (HIGH: 163, CRITICAL: 11)
-trivy image -q --severity HIGH,CRITICAL nginx:alpine  | grep Total   # Total: 3: fewer packages (71 vs 144), far fewer CVEs
-trivy image -q --severity HIGH,CRITICAL hello-app:1.0 | grep Total   # Total: 44 (HIGH: 44, CRITICAL: 0); numbers drift daily
-trivy image -q --severity HIGH,CRITICAL --exit-code 1 nginx:alpine; echo "exit code: $?"          # 1: the gate blocks
-trivy image -q --severity CRITICAL --exit-code 1 nginx:alpine; echo "exit code: $?"               # 0: a looser policy passes
-trivy image -q --severity HIGH,CRITICAL --exit-code 1 nginx:alpine | tail -3; echo "exit code: $?"   # 0! tail's code (gate mistake 2)
-trivy image -q --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 hello-app:2.0; echo "exit code: $?"   # 0: its HIGHs are all "affected"
+brew install trivy && trivy --version                          # 0.75.0 or newer
+export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"  # ⚠️ point Trivy at Colima
+trivy image -q --severity HIGH,CRITICAL nginx:1.27    | grep Total   # Total: 174
+trivy image -q --severity HIGH,CRITICAL nginx:alpine  | grep Total   # Total: 3
+trivy image -q --severity HIGH,CRITICAL hello-app:1.0 | grep Total   # Total: 44
+trivy image -q --severity HIGH,CRITICAL --exit-code 1 nginx:alpine; echo "exit code: $?"          # 1: blocked
+trivy image -q --severity CRITICAL --exit-code 1 nginx:alpine; echo "exit code: $?"               # 0: passes
+trivy image -q --severity HIGH,CRITICAL --exit-code 1 nginx:alpine | tail -3; echo "exit code: $?"   # 0! the pipe
+trivy image -q --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 hello-app:2.0; echo "exit code: $?"   # 0
 ```
-*(`-q` hides progress lines; `| grep Total` keeps just the summary.)* The same image passes or fails depending on the **policy**, and the last line is why the pipeline below uses `--ignore-unfixed`: it blocks the problems you **can** fix.
+**What each line does:**
+- `brew install trivy && trivy --version`: installs Trivy with Homebrew and prints its version: `Version: 0.75.0` or newer.
+- `export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"`: ⚠️ tells Trivy where Colima's Docker socket is (the file Docker listens on), so it can find your local images. `export` lasts for this Terminal tab only: rerun it in a new tab, or if an image "can't be found".
+- `trivy image -q --severity HIGH,CRITICAL nginx:1.27 | grep Total`: scans the image; `-q` = quiet (no progress lines); `--severity` = show and count only HIGH and CRITICAL; `grep Total` keeps just the summary. The first run downloads the vulnerability DB (~130 MB). Expect `Total: 174 (HIGH: 163, CRITICAL: 11)`.
+- `… nginx:alpine | grep Total`: `Total: 3`: the Alpine image has far fewer packages (71 vs 144), so far fewer CVEs.
+- `… hello-app:1.0 | grep Total`: your own image: `Total: 44 (HIGH: 44, CRITICAL: 0)`. The numbers drift daily as new CVEs are published.
+- `… --exit-code 1 nginx:alpine; echo "exit code: $?"`: `--exit-code 1` = exit with 1 if anything is found after the filters: this makes it a gate. Its 3 findings give `exit code: 1`: blocked.
+- `… --severity CRITICAL --exit-code 1 nginx:alpine; echo …`: a looser policy (CRITICAL only) finds nothing to block: `exit code: 0`.
+- `… --exit-code 1 nginx:alpine | tail -3; echo …`: `tail -3` = show the last 3 lines. `exit code: 0`! A pipe reports only the **last** command's exit code (`tail`'s), so piping the gate's output switches the gate off.
+- `… --ignore-unfixed --exit-code 1 hello-app:2.0; echo …`: `--ignore-unfixed` = skip findings with no fix yet. `exit code: 0`, because all its HIGHs have Status `affected` (no fix exists).
+
+The same image passes or fails depending on the **policy**, and the last line is why the pipeline below uses `--ignore-unfixed`: it blocks the problems you **can** fix.
 ### The complete secure pipeline (test → SCA → build → Trivy gate → push to GHCR)
 First create `~/devops-practice/hello-app/test_app.py`:
 ```python

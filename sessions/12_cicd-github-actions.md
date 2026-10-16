@@ -86,10 +86,14 @@ echo "== BUILD";  python3 -c "print('building...')"
 echo "== TEST";   python3 -c "import sys; print('1 test failed'); sys.exit(1)"
 echo "== DEPLOY"; echo "deploying to production"
 EOF
-bash mini-pipeline.sh; echo "pipeline exit code: $?"           # run it, then print its exit code
+bash mini-pipeline.sh; echo "pipeline exit code: $?"           # run + show exit code
 ```
-- `cat > file <<'EOF' … EOF` writes the lines in between into the file; `sys.exit(1)` ends the Python line with exit code 1, like a failing test run. Expect `1 test failed` and `pipeline exit code: 1`: **DEPLOY never prints**, because `set -e` stopped the script, exactly as a CI server would.
-- Now make the test **lie**: change `sys.exit(1)` to `sys.exit(0)` and rerun. `deploying to production` prints, with exit code 0, although the text said "failed".
+**What each line does:**
+- `mkdir -p … && cd …`: makes the practice folder (`-p` = also create missing parent folders, no error if it exists) and moves into it; `&&` = run `cd` only if `mkdir` succeeded.
+- `cat > mini-pipeline.sh <<'EOF' … EOF`: writes the lines in between into the file (a **heredoc**; the quotes in `'EOF'` stop the shell from expanding `$` inside). In the script, `set -e` = stop at the first failing command, and `python3 -c "…"` runs one line of Python; in TEST, `sys.exit(1)` exits with code 1, like a failing test run.
+- `bash mini-pipeline.sh; echo "pipeline exit code: $?"`: runs the script, then prints its exit code (`;` = run the next command no matter what; `$?` = the last command's exit code). Expect `1 test failed` and `pipeline exit code: 1`: **DEPLOY never prints**, because `set -e` stopped the script, exactly as a CI server would.
+
+**Now make the test lie:** change `sys.exit(1)` to `sys.exit(0)` and rerun. `deploying to production` prints, with exit code 0, although the text said "failed".
 
 ### ✅ Check 74
 **74.1** A team's pipeline builds, tests, and deploys every passing commit to **staging** automatically. Production deploys happen only when the release manager clicks **Approve**. Which practice is this?
@@ -144,9 +148,12 @@ bash mini-pipeline.sh; echo "pipeline exit code: $?"           # run it, then pr
 
 ### 🛠 Do (~5 min): look at real runs (read-only)
 ```bash
-gh run list --repo actions/checkout --limit 5   # the newest 5 runs in GitHub's own (public) checkout repo
-gh workflow list --repo actions/checkout        # its workflows (YAML files): name, active, ID
+gh run list --repo actions/checkout --limit 5   # newest 5 runs
+gh workflow list --repo actions/checkout        # its workflows
 ```
+**What each line does:**
+- `gh run list --repo actions/checkout --limit 5`: lists workflow runs, newest first. `--repo owner/name` = look at that repo instead of the one in your current folder (here GitHub's own public `actions/checkout`); `--limit 5` = only 5 rows.
+- `gh workflow list --repo actions/checkout`: lists that repo's workflows (one per YAML file in `.github/workflows/`) with NAME, STATE (`active`) and ID.
 Expect columns `STATUS TITLE WORKFLOW BRANCH EVENT ID ELAPSED AGE`; one push often starts several workflows, one row each. **Translate these cron lines** (answers in the answer key under "Do 75"): 1. `0 18 * * *` · 2. `30 3 * * 1` · 3. `*/15 * * * *`
 
 ### ✅ Check 75
@@ -240,15 +247,20 @@ jobs:
 ### 🛠 Do (~10 min)
 **Bug hunt:** in `broken-ci.yml`, add four bugs: under `push:` change `[main]` to `[master]`; delete the `test` job's `runs-on:` line; add `run: python --version` under `uses: actions/setup-python@v7`; change `needs: test` to `needs: tset`. **actionlint** (optional) is a free checker for workflow files, like `helm lint` for GitHub Actions.
 ```bash
-cd ~/devops-practice/cicd && code ci.yml   # paste the workflow above and save (you push it to GitHub later today)
+cd ~/devops-practice/cicd && code ci.yml   # paste the workflow above, save
 gh api repos/actions/starter-workflows/contents/ci/python-app.yml --jq .content | base64 -d   # GitHub's starter workflow
 cp ci.yml broken-ci.yml && code broken-ci.yml    # make the four bugs, save
-brew install actionlint                          # (optional) install the checker
-actionlint ci.yml; echo "exit code: $?"          # the good file: no output, exit code 0
-actionlint broken-ci.yml; echo "exit code: $?"   # the broken copy: errors with line numbers, exit code 1
+brew install actionlint                          # (optional)
+actionlint ci.yml; echo "exit code: $?"          # the good file
+actionlint broken-ci.yml; echo "exit code: $?"   # the broken copy
 ```
-- `gh api` calls GitHub's API as you; `--jq .content` keeps one field of the **JSON** (JavaScript Object Notation) reply; GitHub sends file contents base64-encoded, so `base64 -d` decodes them. You get `name: Python application` with one job, `build`: **find** its trigger, its job ID, a `uses` step, a `with:` input, and a `run: |`.
-- actionlint reports the missing `runs-on`, the step mixing `uses` and `run`, and the unknown job `tset`. **The `master` bug is valid YAML**, so no checker can see it: only a human catches logic bugs.
+**What each line does:**
+- `cd … && code ci.yml`: go to the practice folder and open a new `ci.yml` in VS Code; paste the full workflow above and save (you push it to GitHub later today).
+- `gh api repos/…/python-app.yml --jq .content | base64 -d`: `gh api` calls GitHub's API as you; `--jq .content` keeps one field of the **JSON** (JavaScript Object Notation) reply; GitHub sends file contents base64-encoded, so `base64 -d` (decode) turns them back into text. You get `name: Python application` with one job, `build`: **find** its trigger, its job ID, a `uses` step, a `with:` input, and a `run: |`.
+- `cp ci.yml broken-ci.yml && code broken-ci.yml`: copies the good file and opens the copy; add the four bugs listed above and save.
+- `brew install actionlint`: (optional) installs the checker with Homebrew, the Mac package manager.
+- `actionlint ci.yml; echo "exit code: $?"`: checks the good file, then prints the exit code. Expect no output and `exit code: 0`.
+- `actionlint broken-ci.yml; echo …`: errors with line numbers and `exit code: 1`: the missing `runs-on`, the step mixing `uses` and `run`, and the unknown job `tset`. **The `master` bug is valid YAML**, so no checker can see it: only a human catches logic bugs.
 
 ### ✅ Check 76
 **76.1** This step fails validation. Why?
@@ -332,41 +344,62 @@ def test_health_is_ok():
 EOF
 printf 'flask==3.0.3\npytest==8.3.3\n' > requirements.txt                 # pinned libraries
 printf '.venv/\n__pycache__/\n.pytest_cache/\nreports/\n' > .gitignore    # files Git must NOT commit
-python3 -m venv .venv && source .venv/bin/activate   # create and switch on a venv; your prompt now shows (.venv)
+python3 -m venv .venv && source .venv/bin/activate   # prompt now shows (.venv)
 pip install -r requirements.txt && pytest -v         # expect "3 passed"
 ```
-- `monkeypatch` is a pytest helper that changes something (here the env var `APP_ENV`) **only during that one test**. `response.data` is the page as **bytes**, so the expected text is written `b"…"`.
-- `python3 -m venv .venv` creates a **virtual environment** (**venv**): a private folder holding this project's own Python libraries, so they don't mix with your Mac's Python.
+**What each line does:**
+- `mkdir -p … && cd …`: makes the project folder and moves into it.
+- `cat > app.py <<'EOF' … EOF`: writes the Flask app: `/` returns `Hello from the <APP_ENV> container!` (`APP_ENV` defaults to `dev`), and `/health` returns `{"status": "ok"}` as JSON.
+- `cat > test_app.py <<'EOF' … EOF`: writes three tests; each asks the test client for a page, then `assert`s the status code or the text. `monkeypatch` is a pytest helper that changes something (here the env var `APP_ENV`) **only during that one test**; `response.data` is the page as **bytes**, so the expected text is written `b"…"`.
+- `printf '…' > requirements.txt`: writes the two libraries with exact (**pinned**) versions, one per line (`\n` = new line), so every machine installs the same ones.
+- `printf '…' > .gitignore`: lists what Git must **not** commit: the venv, Python's caches, and the test reports.
+- `python3 -m venv .venv && source .venv/bin/activate`: creates a **virtual environment** (**venv**): a private folder holding this project's own Python libraries, so they don't mix with your Mac's Python. `source …/activate` switches it on in this terminal; your prompt now shows `(.venv)`.
+- `pip install -r requirements.txt && pytest -v`: `-r` = install everything listed in that file; then pytest runs the tests (`-v` = verbose, one line per test). Expect `3 passed`.
 
 **B–D. Workflow, GitHub, watch.**
 ```bash
-mkdir -p .github/workflows && cp ../cicd/ci.yml .github/workflows/ci.yml   # or paste the full workflow from above into it
-git init -b main                 # ⚠️ without -b main your Git names the branch master: branches: [main] never matches
+mkdir -p .github/workflows && cp ../cicd/ci.yml .github/workflows/ci.yml   # the workflow file
+git init -b main                 # ⚠️ -b main, not master
 git add .
-git status                       # new: app.py, test_app.py, requirements.txt, .gitignore, .github/ (NOT .venv/, reports/)
+git status                       # what will be committed
 git commit -m "Flask app with tests and CI workflow"
-gh repo create ci-demo --private --source=. --push   # private repo from this folder (.), set as origin, pushed now
-gh run watch                     # follow the run live ("no in progress runs" = it already finished)
-gh run list                      # STATUS ✓, WORKFLOW CI, BRANCH main, EVENT push
-gh run view                      # pick the run: JOBS ✓ and ARTIFACTS test-report-3.11, test-report-3.12
+gh repo create ci-demo --private --source=. --push   # create + push
+gh run watch                     # follow the run live
+gh run list                      # recent runs
+gh run view                      # one run's jobs + artifacts
 gh run download -n test-report-3.12 -D downloaded && head -c 300 downloaded/junit-3.12.xml   # fetch one artifact + peek
 ```
-- Expect `✓ Created repository <you>/ci-demo`, then `✓ test (3.11)` and `✓ test (3.12)` side by side (in parallel), then `✓ summary`, and the run completed with 'success'. The XML shows `failures="0"`.
+**What each line does:**
+- `mkdir -p .github/workflows && cp ../cicd/ci.yml …`: creates the exact folder GitHub looks in and copies your workflow there (`..` = the parent folder). Or paste the full workflow from above into the new file.
+- `git init -b main`: turns this folder into a Git repo; `-b main` = name the first branch `main`. ⚠️ Without it your Git names it `master`, and `branches: [main]` never matches.
+- `git add .`: stages every file in this folder (`.` = here), except what `.gitignore` lists.
+- `git status`: shows what will be committed: new `app.py`, `test_app.py`, `requirements.txt`, `.gitignore`, `.github/`, but **not** `.venv/` or `reports/`.
+- `git commit -m "…"`: saves the snapshot; `-m` = the commit message.
+- `gh repo create ci-demo --private --source=. --push`: creates the repo on GitHub. `--private` = only you can see it; `--source=.` = from this folder (set as the remote `origin`); `--push` = push your commits now. Expect `✓ Created repository <you>/ci-demo`.
+- `gh run watch`: follows the run live: `✓ test (3.11)` and `✓ test (3.12)` side by side (in parallel), then `✓ summary`, and the run completed with 'success'. "no in progress runs" = it already finished.
+- `gh run list`: recent runs: STATUS ✓, WORKFLOW CI, BRANCH main, EVENT push.
+- `gh run view`: pick the run from the menu; shows its JOBS (✓) and ARTIFACTS `test-report-3.11`, `test-report-3.12`.
+- `gh run download -n test-report-3.12 -D downloaded && head -c 300 …`: `-n` = the artifact's name; `-D` = the folder to save into; `head -c 300` = show the first 300 characters. The XML shows `failures="0"`.
 - Asked for a password on push? Run **`gh auth setup-git`** once (it lets Git use your `gh` login), then `git push -u origin main`. (Name taken? Use `ci-demo-2`.)
 
 **E–F. Break it, read the ❌, fix it.** In `app.py`, change `Hello from the` to `Hi from the`, and **don't** test locally this time:
 ```bash
-git commit -am "Change greeting" && git push && gh run watch   # -a = stage changed files; test ❌, summary skipped
-gh run view --log-failed         # only the logs of the steps that failed
+git commit -am "Change greeting" && git push && gh run watch   # test ❌, summary skipped
+gh run view --log-failed         # failed steps' logs only
 ```
+**What each line does:**
+- `git commit -am "Change greeting" && git push && gh run watch`: `-a` = stage every already-tracked file you changed (new files aren't included), `-m` = the message; then push, then watch the new run. Expect `test` ❌ and `summary` skipped.
+- `gh run view --log-failed`: shows the logs of **only** the steps that failed, so you don't scroll through everything.
+
+**Reading the result:**
 - Expect `E  AssertionError: assert b'Hello from the ci container!' in b'Hi from the ci container!\n'`, then `1 failed, 2 passed` and `##[error]Process completed with exit code 1.`
 - **How to read it:** **which test** failed, **which line** (`>` marks it), and **why** (the `E` lines). The last line is the key: **exit code 1**, so the step failed. When one test copy fails, `fail-fast` may cancel the other, and `summary` is skipped (it `needs` test). The reports still upload, thanks to `if: always()`.
 - ⚠️ CI only reported the problem; a human decides whether to fix the code or the test. Here it was a mistake: change `Hi` back to `Hello`, run `pytest -q` (3 passed), then `git commit -am "Restore greeting" && git push && gh run watch` → 'success'.
 
 **G. A secret, and masking.** The `cat >>` block **appends** (adds) a step to the end of the `summary` job:
 ```bash
-gh secret set DEMO_SECRET        # hidden prompt: type a FAKE value like pretend-password-123 (--body would hit shell history)
-gh secret list                   # DEMO_SECRET and a date, never the value
+gh secret set DEMO_SECRET        # type a FAKE value
+gh secret list                   # name + date only
 cat >> .github/workflows/ci.yml <<'EOF'
       - name: Use the demo secret
         env:
@@ -378,7 +411,14 @@ EOF
 git commit -am "Demo: use a secret" && git push && gh run watch
 gh run view --log | grep -E "secret is set|value:"   # pick the newest run
 ```
-`[ -n "$DEMO_SECRET" ]` = "is the variable non-empty?". Expect `secret is set` and **`value: ***`**: GitHub hid the value. (Printing it is OK only because it's fake.) **Keep `ci-demo`** for the next session. (To delete it later: `gh auth refresh -s delete_repo`, then `gh repo delete <you>/ci-demo`.)
+**What each line does:**
+- `gh secret set DEMO_SECRET`: creates a repo secret and asks for its value at a hidden prompt. Type a **fake** value like `pretend-password-123` (`--body <value>` also works, but the value would land in your shell history).
+- `gh secret list`: shows `DEMO_SECRET` and a date, never the value: secrets are write-only.
+- `cat >> .github/workflows/ci.yml <<'EOF' … EOF`: `>>` **appends** the lines to the end of the file (`>` would overwrite it). The new step gets the secret through `env:`; `[ -n "$DEMO_SECRET" ]` = "is the variable non-empty?", then it prints the value on purpose.
+- `git commit -am … && git push && gh run watch`: commit the changed workflow, push it, and watch the run.
+- `gh run view --log | grep -E "secret is set|value:"`: `--log` = the full log of the run you pick; `grep -E` keeps only the two interesting lines. Expect `secret is set` and **`value: ***`**: GitHub hid the value.
+
+(Printing it is OK only because it's fake.) **Keep `ci-demo`** for the next session. (To delete it later: `gh auth refresh -s delete_repo`, then `gh repo delete <you>/ci-demo`.)
 
 ### ✅ Check 77
 **77.1** A matrix job (Python 3.11 and 3.12) uploads its report with `name: test-report`, the same name in both copies. The 3.11 copy uploads fine; the 3.12 copy fails at the upload step. Why?

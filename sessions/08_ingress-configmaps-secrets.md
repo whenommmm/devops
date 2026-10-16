@@ -4,11 +4,17 @@
 
 **Before you start:**
 ```bash
-minikube status                       # everything Running (if not: minikube start)
-kubectl get deploy,svc                # old web practice objects left? kubectl delete deployment web; kubectl delete svc web web-np web-demo
-minikube addons list | grep ingress   # is the Ingress add-on (the NGINX Ingress controller) switched on?
+minikube status                       # everything Running?
+kubectl get deploy,svc                # leftovers from last session?
+minikube addons list | grep ingress   # Ingress add-on on?
 mkdir -p ~/devops-practice/k8s-ingress-config && cd ~/devops-practice/k8s-ingress-config
 ```
+**What each line does:**
+- `minikube status`: checks that your local cluster is up: `host`, `kubelet` and `apiserver` should all say `Running` (if not: `minikube start`).
+- `kubectl get deploy,svc`: lists Deployments and Services (the comma = both kinds at once). If old `web` practice objects are left, delete them: `kubectl delete deployment web` and `kubectl delete svc web web-np web-demo`.
+- `minikube addons list | grep ingress`: lists minikube's optional extras (addons); `|` sends that list into `grep`, which keeps only the lines containing `ingress`. It shows whether the Ingress add-on (the NGINX Ingress controller) is switched on.
+- `mkdir -p … && cd …`: makes this session's practice folder (`-p` = also create parent folders, no error if it exists) and moves into it (`&&` = only if the first part worked).
+
 > ⚠️ Never delete the `minikube` or `localstack` containers, and don't delete anything in the `ingress-nginx`, `kube-system`, `argocd` or `final-app` namespaces. If `kubectl get ingress -A` shows Ingresses elsewhere, leave them alone. Work only in `default`. (Delete those leftovers because this session reuses the names `web` and `api`.)
 
 ## 🔁 Warm-up
@@ -75,20 +81,33 @@ The **OSI model** (**Open Systems Interconnection**) describes networking as 7 s
 ### 🛠 Do (~15 min)
 **`kicbase/echo-server`** is a tiny web server that replies with **which Pod answered** and **the exact request it received**: perfect for seeing where the Ingress sent you.
 ```bash
-minikube addons list | grep ingress   # │ ingress │ minikube │ enabled ✅ │ (if disabled: minikube addons enable ingress, 1–2 min)
-kubectl get pods,svc,ingressclass -n ingress-nginx   # controller Pod 1/1 Running ("admission" Pods Completed = finished setup jobs) · NodePort 80:31119,443:32766 · nginx (default)
-kubectl create deployment web --image=kicbase/echo-server:1.0 --port=8080   # --port sets the containerPort
-kubectl expose deployment web --port=80 --target-port=8080                  # Service web: port 80 → the app's 8080
+minikube addons list | grep ingress   # enabled?
+kubectl get pods,svc,ingressclass -n ingress-nginx   # the controller + its class
+kubectl create deployment web --image=kicbase/echo-server:1.0 --port=8080
+kubectl expose deployment web --port=80 --target-port=8080                  # Service web: 80 → 8080
 kubectl create deployment api --image=kicbase/echo-server:1.0 --port=8080
 kubectl expose deployment api --port=80 --target-port=8080
-kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" --dry-run=client -o yaml > ingress.yaml   # * = Prefix; open it: rules → host → paths → backend
+kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" --dry-run=client -o yaml > ingress.yaml   # only WRITES the YAML
 kubectl apply -f ingress.yaml
-kubectl get ingress                   # shop  nginx  shop.example.com  192.168.49.2  80 (ADDRESS can take ~1 min)
-kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80   # in Tab 2 (Cmd + T): Mac 8080 → the controller; leave it running
-curl -H "Host: shop.example.com" http://localhost:8080/   # Request served by web-… · X-Forwarded-For: 127.0.0.1
-curl -i http://localhost:8080/        # -i = show headers. Host "localhost" matches no rule → HTTP/1.1 404 Not Found
+kubectl get ingress                   # shop  nginx  shop.example.com …
+kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80   # in Tab 2; leave it running
+curl -H "Host: shop.example.com" http://localhost:8080/   # served by web-…
+curl -i http://localhost:8080/        # 404 Not Found
 ```
-*The `X-Forwarded-…` headers were added by the controller: reverse proxies add them so the app can still learn the original client and host. The 404 page comes from the controller itself. Leave the port-forward running for the routing and TLS steps below.*
+**What each line does:**
+- `minikube addons list | grep ingress`: should show `│ ingress │ minikube │ enabled ✅ │`. If it says disabled, run `minikube addons enable ingress` and wait 1–2 minutes.
+- `kubectl get pods,svc,ingressclass -n ingress-nginx`: three kinds at once in the namespace `ingress-nginx` (`-n` = namespace): the controller Pod `1/1 Running` (the "admission" Pods `Completed` are finished setup jobs), its NodePort Service `80:31119,443:32766`, and the IngressClass `nginx` marked `(default)`.
+- `kubectl create deployment web --image=kicbase/echo-server:1.0 --port=8080`: a Deployment running the echo server; `--image` = the image; `--port` = sets `containerPort: 8080` (where the echo server listens).
+- `kubectl expose deployment web --port=80 --target-port=8080`: a ClusterIP Service `web`. `--port` = the Service's own port (80); `--target-port` = the Pods' port, where the app really listens (8080).
+- The two `api` lines: the same pair again, for a second app called `api`.
+- `kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" … > ingress.yaml`: writes (doesn't create) an Ingress named `shop`. `--class` = the IngressClass; `--rule` = `host/path=service:port`, and the `*` at the end means pathType `Prefix`; `--dry-run=client` = pretend only; `-o yaml` = print as YAML; `>` = save into the file. Open it to see the nesting: rules → host → paths → backend.
+- `kubectl apply -f ingress.yaml`: creates the Ingress from the file (`-f` = file).
+- `kubectl get ingress`: `shop  nginx  shop.example.com  192.168.49.2  80`. The ADDRESS can take about a minute to appear: the controller is picking the Ingress up.
+- `kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80`: (in Tab 2, Cmd + T) carries your Mac's port 8080 to the controller's port 80. It keeps the terminal busy; leave it running.
+- `curl -H "Host: shop.example.com" http://localhost:8080/`: sends a request whose Host header is `shop.example.com` (`-H` = add or replace a header), as a browser would. The echo server replies `Request served by web-…` and shows the request it got, including `X-Forwarded-For: 127.0.0.1`: reverse proxies add these `X-Forwarded-…` headers so the app can still learn the original client and host.
+- `curl -i http://localhost:8080/`: `-i` = also show the response headers. Now the Host is `localhost`, which matches no rule, so the controller itself answers `HTTP/1.1 404 Not Found`.
+
+*Leave the port-forward running for the routing and TLS steps below.*
 
 ### ✅ Check 58
 **58.1** On a fresh cluster, an engineer applies a valid Ingress. `kubectl get ingress` shows no ADDRESS, and requests to the nodes time out. The Pods and Services work fine. What's the most likely cause?
@@ -191,20 +210,34 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 365 -keyout tls.key -out tls.crt
 ```bash
 kubectl create secret tls shop-tls --cert=tls.crt --key=tls.key   # secret/shop-tls created
 kubectl get secret shop-tls           # TYPE kubernetes.io/tls, DATA 2
-kubectl describe secret shop-tls      # tls.crt: 1168 bytes, tls.key: 1704 bytes (sizes only: describe never prints a Secret's values)
+kubectl describe secret shop-tls      # sizes only
 code ingress.yaml                     # replace everything with the worked example above, then save
-kubectl apply -f ingress.yaml         # ingress.networking.k8s.io/shop configured (= updated)
-kubectl get ingress shop              # HOSTS shop.example.com,api.example.com · PORTS 80, 443
-kubectl describe ingress shop         # TLS: shop-tls terminates …; each rule with the Pod it reaches: /api  api:80 (10.244.0.154:8080)
-kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80 8443:443   # in Tab 2: Ctrl + C the old one first; Mac 8443 → HTTPS
-curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/api/orders   # api-… · GET /api/orders (the full path)
-curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/apix         # web-… (/apix isn't below /api)
-curl -k --resolve api.example.com:8443:127.0.0.1 https://api.example.com:8443/               # api-… (host-based routing)
-curl -i -H "Host: shop.example.com" http://localhost:8080/   # HTTP/1.1 308 Permanent Redirect · Location: https://shop.example.com
-curl --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/   # no -k → curl: (60) SSL certificate problem: self signed certificate
-curl -kv --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/ 2>&1 | grep "subject:"   # subject: CN=shop.example.com
+kubectl apply -f ingress.yaml         # shop configured (= updated)
+kubectl get ingress shop              # PORTS 80, 443
+kubectl describe ingress shop         # TLS + each rule's Pods
+kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80 8443:443   # in Tab 2: Ctrl + C the old one first
+curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/api/orders   # api-…
+curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/apix         # web-…
+curl -k --resolve api.example.com:8443:127.0.0.1 https://api.example.com:8443/               # api-…
+curl -i -H "Host: shop.example.com" http://localhost:8080/   # 308 Permanent Redirect
+curl --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/   # no -k → certificate error
+curl -kv --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/ 2>&1 | grep "subject:"   # CN=shop.example.com
 ```
-*`--resolve name:port:127.0.0.1` = "for this name and port, connect to 127.0.0.1" (no DNS needed, and SNI is correct). `-v` prints the TLS details on stderr, and `2>&1` sends them into the pipe: the controller presented **your** certificate.*
+**What each line does:**
+- `kubectl create secret tls shop-tls --cert=tls.crt --key=tls.key`: stores your certificate (`--cert`) and private key (`--key`) in a Secret of type `kubernetes.io/tls` named `shop-tls`.
+- `kubectl get secret shop-tls`: TYPE `kubernetes.io/tls`, DATA `2` (the two keys `tls.crt` and `tls.key`).
+- `kubectl describe secret shop-tls`: `tls.crt: 1168 bytes`, `tls.key: 1704 bytes`: sizes only, as `describe` never prints a Secret's values.
+- `code ingress.yaml`: open the file, replace everything with the worked example above, and save.
+- `kubectl apply -f ingress.yaml`: `ingress.networking.k8s.io/shop configured` (= the existing Ingress was updated).
+- `kubectl get ingress shop`: HOSTS `shop.example.com,api.example.com` and PORTS `80, 443` (443 because of `tls:`).
+- `kubectl describe ingress shop`: shows `TLS: shop-tls terminates …` and each rule with the Pod it reaches, e.g. `/api  api:80 (10.244.0.154:8080)`.
+- `kubectl port-forward … 8080:80 8443:443`: (in Tab 2: press Ctrl + C on the old port-forward first) two ports now: Mac 8080 → HTTP (80), and Mac 8443 → HTTPS (443).
+- `curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/api/orders`: `--resolve name:port:127.0.0.1` = "for this name and port, connect to 127.0.0.1" (no DNS needed, and SNI and the Host header carry the real name); `-k` = accept the self-signed certificate. Answered by `api-…` with `GET /api/orders`: the full path reaches the app.
+- `… https://shop.example.com:8443/apix`: answered by `web-…`, because `/apix` isn't below `/api` (Prefix compares whole segments).
+- `curl -k --resolve api.example.com:8443:127.0.0.1 https://api.example.com:8443/`: answered by `api-…`: host-based routing.
+- `curl -i -H "Host: shop.example.com" http://localhost:8080/`: plain HTTP now gets `HTTP/1.1 308 Permanent Redirect` with `Location: https://shop.example.com`.
+- `curl --resolve … https://shop.example.com:8443/` (no `-k`): curl checks the certificate and refuses: `curl: (60) SSL certificate problem: self signed certificate`.
+- `curl -kv … 2>&1 | grep "subject:"`: `-v` = verbose: prints the TLS details on stderr (the error output); `2>&1` sends stderr into the pipe too, so `grep` can filter it. `subject: CN=shop.example.com` proves the controller presented **your** certificate.
 
 ### ✅ Check 59
 **59.1** An Ingress has two rules for host `shop.example.com`: `/api` (Prefix) → `api`, and `/` (Prefix) → `web`. Where do these three requests go: `/api/v1/items`, `/apis`, `/`?
@@ -286,21 +319,38 @@ spec:
 ### 🛠 Do (~15 min)
 ```bash
 kubectl create configmap app-config --from-literal=APP_COLOR=blue --from-literal=APP_MODE=prod   # configmap/app-config created
-kubectl get configmap app-config -o yaml                       # data: APP_COLOR: blue, APP_MODE: prod (plain, readable text)
-printf 'log_level=info\ncache=true\n' > settings.properties    # printf writes text; \n = new line → a two-line file
+kubectl get configmap app-config -o yaml                       # APP_COLOR: blue, APP_MODE: prod
+printf 'log_level=info\ncache=true\n' > settings.properties    # a two-line file
 kubectl create configmap app-files --from-file=settings.properties
-kubectl describe configmap app-files                           # one key, settings.properties, holding both lines
-kubectl create configmap demo --from-literal=APP_COLOR=blue --dry-run=client -o yaml   # only pretends: prints ready-made YAML (add > demo.yaml)
+kubectl describe configmap app-files                           # one key, two lines
+kubectl create configmap demo --from-literal=APP_COLOR=blue --dry-run=client -o yaml   # prints YAML only
 code cfg-demo.yaml                                             # paste the Pod above, then save
 kubectl apply -f cfg-demo.yaml && kubectl get pod cfg-demo     # wait until Running
 kubectl exec cfg-demo -- env | grep -E 'COLOR|APP_'            # COLOR=blue, APP_COLOR=blue, APP_MODE=prod
-kubectl exec cfg-demo -- ls /etc/config                        # APP_COLOR  APP_MODE: one file per key
-kubectl exec cfg-demo -- cat /etc/config/APP_COLOR             # blue (your prompt may follow it: there's no newline)
+kubectl exec cfg-demo -- ls /etc/config                        # APP_COLOR  APP_MODE
+kubectl exec cfg-demo -- cat /etc/config/APP_COLOR             # blue
 kubectl exec cfg-demo -- cat /etc/app/settings.properties      # the two lines
-kubectl patch configmap app-config -p '{"data":{"APP_COLOR":"green"}}'   # patch = change only the listed fields (JSON in single quotes)
-kubectl exec cfg-demo -- cat /etc/config/APP_COLOR             # blue at first; about a minute later: green
-kubectl exec cfg-demo -- env | grep APP_COLOR                  # blue, and STILL blue a minute later
+kubectl patch configmap app-config -p '{"data":{"APP_COLOR":"green"}}'
+kubectl exec cfg-demo -- cat /etc/config/APP_COLOR             # blue, a minute later green
+kubectl exec cfg-demo -- env | grep APP_COLOR                  # STILL blue
 ```
+**What each line does:**
+- `kubectl create configmap app-config --from-literal=… --from-literal=…`: creates a ConfigMap from values typed on the command line; each `--from-literal=KEY=value` adds one key. Prints `configmap/app-config created`.
+- `kubectl get configmap app-config -o yaml`: shows it as YAML (`-o yaml`): `data:` holds `APP_COLOR: blue` and `APP_MODE: prod` in plain, readable text.
+- `printf 'log_level=info\ncache=true\n' > settings.properties`: `printf` writes text, `\n` = a new line, and `>` saves it into the file: a two-line file.
+- `kubectl create configmap app-files --from-file=settings.properties`: a ConfigMap from a file: the file name becomes the key, its contents the value.
+- `kubectl describe configmap app-files`: one key, `settings.properties`, holding both lines.
+- `kubectl create configmap demo … --dry-run=client -o yaml`: only pretends (`--dry-run=client`) and prints ready-made YAML; add `> demo.yaml` to save it.
+- `code cfg-demo.yaml`: paste the Pod above, then save.
+- `kubectl apply -f cfg-demo.yaml && kubectl get pod cfg-demo`: creates the Pod (`-f` = file), then shows its status (`&&` = only if the first part worked). Repeat the `get` until it says `Running`.
+- `kubectl exec cfg-demo -- env | grep -E 'COLOR|APP_'`: `exec` = run one command inside the Pod (everything after `--`); `env` lists its environment variables, and `grep -E 'A|B'` keeps lines with A or B. You should see `COLOR=blue` (way a), `APP_COLOR=blue` and `APP_MODE=prod` (way b).
+- `kubectl exec cfg-demo -- ls /etc/config`: `APP_COLOR  APP_MODE`: one file per key (way c).
+- `kubectl exec cfg-demo -- cat /etc/config/APP_COLOR`: prints `blue`. Your prompt may follow it on the same line, as the value has no newline.
+- `kubectl exec cfg-demo -- cat /etc/app/settings.properties`: the two lines of the file-based ConfigMap.
+- `kubectl patch configmap app-config -p '{"data":{"APP_COLOR":"green"}}'`: `patch` = change only the fields you list; `-p` = the change, written as JSON (in single quotes so the shell leaves it alone). `APP_COLOR` becomes `green`.
+- `kubectl exec cfg-demo -- cat /etc/config/APP_COLOR`: `blue` at first; about a minute later, `green`.
+- `kubectl exec cfg-demo -- env | grep APP_COLOR`: `blue`, and **still** `blue` a minute later.
+
 *The **file** updated by itself; the **env var** was fixed when the container started.*
 
 ### ✅ Check 60
@@ -406,35 +456,58 @@ spec:
 
 ### 🛠 Do (~15 min)
 ```bash
-echo -n 'S3cr3t!' | base64            # UzNjcjN0IQ== (single quotes keep the ! safe from zsh)
-echo 'S3cr3t!' | base64               # UzNjcjN0IQo= (the newline changed it!)
-echo 'UzNjcjN0IQ==' | base64 -d       # S3cr3t! (-d = decode)
+echo -n 'S3cr3t!' | base64            # UzNjcjN0IQ==
+echo 'S3cr3t!' | base64               # UzNjcjN0IQo= (different!)
+echo 'UzNjcjN0IQ==' | base64 -d       # S3cr3t!
 kubectl create secret generic db-secret --from-literal=DB_USER=admin --from-literal=DB_PASSWORD='S3cr3t!'
-kubectl describe secret db-secret     # Type: Opaque · DB_PASSWORD: 7 bytes, DB_USER: 5 bytes (sizes only)
-kubectl get secret db-secret -o yaml  # data: DB_PASSWORD: UzNjcjN0IQ==, DB_USER: YWRtaW4=
-kubectl get secret db-secret -o jsonpath='{.data.DB_PASSWORD}' | base64 -d   # S3cr3t!: base64 hid nothing
+kubectl describe secret db-secret     # sizes only
+kubectl get secret db-secret -o yaml  # the base64 values
+kubectl get secret db-secret -o jsonpath='{.data.DB_PASSWORD}' | base64 -d   # S3cr3t!
 code app-pod.yaml                     # paste the Pod above, then save
 kubectl apply -f app-pod.yaml
-kubectl exec app-pod -- env | grep -E 'APP_|DB_'      # APP_COLOR=green (it started after your patch!), APP_MODE=prod, DB_PASSWORD=S3cr3t!
-kubectl exec app-pod -- cat /etc/secret/DB_PASSWORD   # S3cr3t! (already decoded; ls /etc/secret shows one file per key)
-kubectl exec app-pod -- df -h /etc/secret             # tmpfs … /etc/secret: the files are in RAM (df -h = disk usage)
-sed 's/name: app-pod/name: broken-pod/; s/key: DB_PASSWORD/key: password/' app-pod.yaml > broken-pod.yaml   # sed = replace text: a copy with a wrong key
+kubectl exec app-pod -- env | grep -E 'APP_|DB_'      # APP_COLOR=green, …, DB_PASSWORD=S3cr3t!
+kubectl exec app-pod -- cat /etc/secret/DB_PASSWORD   # S3cr3t!
+kubectl exec app-pod -- df -h /etc/secret             # tmpfs
+sed 's/name: app-pod/name: broken-pod/; s/key: DB_PASSWORD/key: password/' app-pod.yaml > broken-pod.yaml   # a copy with a wrong key
 kubectl apply -f broken-pod.yaml
-kubectl get pod broken-pod                            # STATUS CreateContainerConfigError
-kubectl describe pod broken-pod | grep Warning        # … couldn't find key password in Secret default/db-secret
+kubectl get pod broken-pod                            # CreateContainerConfigError
+kubectl describe pod broken-pod | grep Warning        # couldn't find key password …
 kubectl delete pod broken-pod
-kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-username=riya --docker-password=FAKE --dry-run=client -o yaml   # look only: kubernetes.io/dockerconfigjson
+kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-username=riya --docker-password=FAKE --dry-run=client -o yaml   # look only
 ```
+**What each line does:**
+- `echo -n 'S3cr3t!' | base64`: encodes the password; `-n` = no newline at the end. Gives `UzNjcjN0IQ==`. The single quotes keep the `!` safe from zsh.
+- `echo 'S3cr3t!' | base64`: the same without `-n` gives `UzNjcjN0IQo=`: the hidden newline was encoded too.
+- `echo 'UzNjcjN0IQ==' | base64 -d`: `-d` = decode. Gives back `S3cr3t!`, no key needed.
+- `kubectl create secret generic db-secret --from-literal=… --from-literal=…`: creates an `Opaque` Secret (`generic`) with two keys, `DB_USER` and `DB_PASSWORD`; kubectl does the base64 for you.
+- `kubectl describe secret db-secret`: `Type: Opaque`, `DB_PASSWORD: 7 bytes`, `DB_USER: 5 bytes`: sizes only.
+- `kubectl get secret db-secret -o yaml`: but `-o yaml` shows the stored values: `DB_PASSWORD: UzNjcjN0IQ==`, `DB_USER: YWRtaW4=`.
+- `kubectl get secret db-secret -o jsonpath='{.data.DB_PASSWORD}' | base64 -d`: `-o jsonpath` = print just one field; decoding it gives `S3cr3t!`. base64 hid nothing.
+- `code app-pod.yaml` + `kubectl apply -f app-pod.yaml`: paste the Pod above, save, and create it.
+- `kubectl exec app-pod -- env | grep -E 'APP_|DB_'`: `APP_COLOR=green` (this Pod started after your patch, so it read the new value), `APP_MODE=prod`, and `DB_PASSWORD=S3cr3t!`, already decoded.
+- `kubectl exec app-pod -- cat /etc/secret/DB_PASSWORD`: `S3cr3t!`, decoded, read from the mounted file (`ls /etc/secret` would show one file per key).
+- `kubectl exec app-pod -- df -h /etc/secret`: `df -h` = show disk usage in human-readable sizes. The filesystem is `tmpfs`: the secret files live in RAM.
+- `sed '…' app-pod.yaml > broken-pod.yaml`: `sed` replaces text (`s/old/new/`; `;` separates two replacements). The copy is renamed `broken-pod` and asks for a key `password` that doesn't exist.
+- `kubectl apply -f broken-pod.yaml` + `kubectl get pod broken-pod`: STATUS `CreateContainerConfigError`.
+- `kubectl describe pod broken-pod | grep Warning`: keeps only the warning line: `… couldn't find key password in Secret default/db-secret`.
+- `kubectl delete pod broken-pod`: removes it.
+- `kubectl create secret docker-registry regcred … --dry-run=client -o yaml`: look only: prints a registry-login Secret (`--docker-server`/`--docker-username`/`--docker-password` = the registry and its login) of type `kubernetes.io/dockerconfigjson`, without creating it.
+
 **Clean up the whole session** (press Ctrl + C on any port-forward first):
 ```bash
 kubectl delete pod cfg-demo app-pod
 kubectl delete configmap app-config app-files
 kubectl delete secret db-secret shop-tls
-kubectl delete ingress shop           # keep the ingress add-on: a later session uses it
+kubectl delete ingress shop           # keep the ingress add-on
 kubectl delete svc web api
 kubectl delete deployment web api
 rm tls.key
 ```
+**What each line does:**
+- `kubectl delete pod/configmap/secret …`: deletes the two Pods, the two ConfigMaps and the two Secrets; you can list several names of one kind in a single command.
+- `kubectl delete ingress shop`: removes the Ingress rules. Keep the ingress add-on itself: a later session uses it.
+- `kubectl delete svc web api` + `kubectl delete deployment web api`: removes both apps and their Services.
+- `rm tls.key`: deletes the private key file from your Mac, as private keys shouldn't be left lying around (`tls.crt` is public and harmless).
 
 ### ✅ Check 61
 **61.1** A teammate says: "Our Secret YAML files are safe in the Git repo, because the values are base64." What's the best response?

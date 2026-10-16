@@ -74,10 +74,14 @@ Priya's team runs an online shop on Kubernetes. For **one app** they have 6 YAML
 
 ### 🛠 Do (~3 min)
 ```bash
-helm version     # ONE line, no "Server" part (docker version showed Client + Server): there is no Helm server
-helm list -A     # list = releases; -A = all namespaces. You may see final-ticketdesk (leave it alone)
-helm repo list   # repos Helm already knows: bitnami https://charts.bitnami.com/bitnami, prometheus-community …
+helm version     # one line, no "Server" part
+helm list -A     # releases in all namespaces
+helm repo list   # repos Helm already knows
 ```
+**What each line does:**
+- `helm version`: prints the version of the Helm program on your Mac (`Version:"v4.3.0"`). Just one line with no "Server" part (unlike `docker version`, which shows Client + Server), because there is no Helm server.
+- `helm list -A`: lists **releases** (installed charts); `-A` = all namespaces (long form `--all-namespaces`). You may see `final-ticketdesk` in `final-app`: leave it alone.
+- `helm repo list`: the chart repositories Helm already knows, as short name + URL, e.g. `bitnami  https://charts.bitnami.com/bitnami` and `prometheus-community`.
 
 ### ✅ Check 70
 **70.1** Which pairing of Helm ideas with Docker ideas is correct?
@@ -153,13 +157,20 @@ autoscaling:
 
 ### 🛠 Do (~8 min)
 ```bash
-mkdir -p ~/devops-practice/helm && cd ~/devops-practice/helm   # make the practice folder and move into it
-helm create mychart                       # Creating mychart
-find mychart | sort                       # every file and folder, alphabetically: the tree above
-grep -vE '^(#|$)' mychart/Chart.yaml      # -v = lines NOT matching; ^(#|$) = comment or empty lines → the six real lines
-grep -vE '^\s*(#|$)' mychart/values.yaml | head -20   # \s* = indented comments too → replicaCount: 1, image: …
-helm lint mychart                         # check the chart without installing: 1 chart(s) linted, 0 chart(s) failed
+mkdir -p ~/devops-practice/helm && cd ~/devops-practice/helm   # practice folder
+helm create mychart                       # make the starter chart
+find mychart | sort                       # list every file
+grep -vE '^(#|$)' mychart/Chart.yaml      # Chart.yaml without comments
+grep -vE '^\s*(#|$)' mychart/values.yaml | head -20   # values.yaml without comments
+helm lint mychart                         # check the chart
 ```
+**What each line does:**
+- `mkdir -p … && cd …`: makes the practice folder (`-p` = also create missing parent folders, no error if it exists) and moves into it; `&&` = run the second command only if the first succeeded.
+- `helm create mychart`: builds the scaffold chart in a new folder `mychart` and prints `Creating mychart`.
+- `find mychart | sort`: lists every file and folder inside `mychart`; `sort` puts them in alphabetical order, so you see the tree shown above.
+- `grep -vE '^(#|$)' mychart/Chart.yaml`: hides comment and empty lines. `-v` = print lines that do NOT match; `-E` = extended pattern, so `(#|$)` = "`#` or end of line"; `^` = start of line. You see the six real lines.
+- `grep -vE '^\s*(#|$)' … | head -20`: the same for values.yaml, but `\s*` (any spaces) also catches indented comments; `head -20` = first 20 lines only. Starts with `replicaCount: 1`, `image:` …
+- `helm lint mychart`: checks the chart's structure and template syntax without installing anything. Expect `1 chart(s) linted, 0 chart(s) failed`.
 *(The single quotes around `'^(#|$)'` stop the shell from touching `$`: **the outer quotes decide!** `helm lint` also prints `[INFO] Chart.yaml: icon is recommended`. That's only a suggestion; **0 failed** = the chart is valid.)*
 
 ### ✅ Check 71
@@ -249,20 +260,31 @@ image:
 ```
 ```bash
 cd ~/devops-practice/helm
-helm template web ./mychart -s templates/deployment.yaml | head -40   # web = the release name to pretend with (see below)
-code mychart/values.yaml                  # change replicaCount: 1 → 2, and under image: tag: "" → "1.27"; save
-helm template web ./mychart -s templates/deployment.yaml | grep -E 'replicas|image:'   # replicas: 2, image: "nginx:1.27"
-code values-prod.yaml                     # paste the 3 lines above, save
+helm template web ./mychart -s templates/deployment.yaml | head -40   # render one file
+code mychart/values.yaml                  # replicaCount → 2, tag → "1.27"
+helm template web ./mychart -s templates/deployment.yaml | grep -E 'replicas|image:'   # replicas: 2, "nginx:1.27"
+code values-prod.yaml                     # paste the 3 lines above
 helm template web ./mychart -f values-prod.yaml -s templates/deployment.yaml | grep -E 'replicas|image:'   # replicas: 5, "nginx:1.28-alpine"
 helm template web ./mychart -f values-prod.yaml --set replicaCount=3 -s templates/deployment.yaml | grep -E 'replicas|image:'   # replicas: 3, "nginx:1.28-alpine"
 ```
+**What each line does:**
+- `cd ~/devops-practice/helm`: back to the practice folder, where the chart and `values-prod.yaml` live.
+- `helm template web ./mychart -s templates/deployment.yaml | head -40`: renders the chart on your Mac and prints the YAML; nothing is sent to the cluster. `web` = the release name to pretend with (it becomes `name: web-mychart`); `-s` (`--show-only`) = print only this one template; `head -40` = first 40 lines.
+- `code mychart/values.yaml`: opens the file in VS Code. Change `replicaCount: 1` → `2` and, under `image:`, `tag: ""` → `"1.27"`, then save.
+- `helm template … | grep -E 'replicas|image:'`: renders again and keeps only lines containing `replicas` **or** `image:` (`|` inside the pattern = "or"). Expect `replicas: 2` and `image: "nginx:1.27"`: your new defaults.
+- `code values-prod.yaml`: creates the prod values file next to the chart (not inside it); paste the 3 YAML lines above and save.
+- `helm template … -f values-prod.yaml …`: `-f` (`--values`) layers that file on top of the defaults. Expect `replicas: 5` and `"nginx:1.28-alpine"`; the repository stays `nginx` because merging is key by key.
+- `… -f values-prod.yaml --set replicaCount=3 …`: `--set` overrides one key on the command line and beats any `-f` file, so `replicas: 3`; the image stays `1.28-alpine`.
 The first render shows `name: web-mychart`, `replicas: 1`, the label `app.kubernetes.io/managed-by: Helm` and `image: "nginx:1.16.0"` (the tag `""` was empty, so `default .Chart.AppVersion` kicked in). With `-f values-prod.yaml` the repository is still `nginx`, because merging is key by key; `--set replicaCount=3` then beats the file's `5`.
 
 **Break it on purpose.** In `mychart/templates/deployment.yaml`, (1) delete **one** closing brace so the line reads `replicas: {{ .Values.replicaCount }`, run the commands below, and put the brace back. (2) Change `.Values.replicaCount` to `.Values.replicacount` (lowercase c), run them again, then **change it back** and lint once more.
 ```bash
-helm lint mychart; echo "exit code: $?"   # (1) [ERROR] … unexpected "}" in operand, 1 chart(s) failed, exit code: 1  (2) 0 chart(s) failed
-helm template web ./mychart -s templates/deployment.yaml | grep replicas   # (2) `replicas:` with NOTHING after it: no error anywhere, sneaky!
+helm lint mychart; echo "exit code: $?"   # lint, then show its exit code
+helm template web ./mychart -s templates/deployment.yaml | grep replicas   # the rendered replicas line
 ```
+**What each line does:**
+- `helm lint mychart; echo "exit code: $?"`: lints the chart, then prints its exit code. `;` = run the next command no matter what; `$?` = the last command's exit code (0 = success). Break (1) gives `[ERROR] … unexpected "}" in operand`, `1 chart(s) failed`, `exit code: 1`; break (2) still gives `0 chart(s) failed`.
+- `helm template … | grep replicas`: renders the Deployment and shows only the `replicas` line. With break (2) it prints `replicas:` with **nothing** after it and no error anywhere: a misspelt key silently becomes empty.
 
 ### ✅ Check 72
 **72.1** `values.yaml` has `replicaCount: 1`. `values-prod.yaml` has `replicaCount: 4`. You run `helm install shop ./mychart --set replicaCount=2 -f values-prod.yaml`. How many replicas are rendered?
@@ -327,40 +349,66 @@ By default Helm **sends the YAML and returns immediately**. It marks the revisio
 First check that the chart has `replicaCount: 2` (capital C!) and `tag: "1.27"`, and that `helm lint mychart` passes.
 ```bash
 cd ~/devops-practice/helm
-helm install web ./mychart -n helm-demo --create-namespace   # STATUS: deployed, REVISION: 1, then the NOTES (NOTES.txt, filled in)
-helm list -n helm-demo                    # web  helm-demo  1  …  deployed  mychart-0.1.0  1.16.0 (APP VERSION = Chart.yaml's claim only)
-kubectl get deploy,pods,svc -n helm-demo  # web-mychart 2/2, two Pods Running, service/web-mychart ClusterIP 80/TCP
-kubectl get secrets -n helm-demo          # sh.helm.release.v1.web.v1 = Helm's record of revision 1
-kubectl port-forward -n helm-demo svc/web-mychart 8080:80   # in a 2nd tab (Cmd + T): Mac port 8080 → Service port 80
-curl -I http://localhost:8080             # back in tab 1: HTTP/1.1 200 OK, Server: nginx/1.27.x
+helm install web ./mychart -n helm-demo --create-namespace   # revision 1
+helm list -n helm-demo                    # releases in helm-demo
+kubectl get deploy,pods,svc -n helm-demo  # what the chart created
+kubectl get secrets -n helm-demo          # Helm's revision records
+kubectl port-forward -n helm-demo svc/web-mychart 8080:80   # in a 2nd tab (Cmd + T)
+curl -I http://localhost:8080             # back in tab 1
 ```
+**What each line does:**
+- `cd ~/devops-practice/helm`: work from the folder that holds `mychart`.
+- `helm install web ./mychart -n helm-demo --create-namespace`: installs the chart as a release named `web`. `-n` (`--namespace`) = put it in `helm-demo`; `--create-namespace` = create that namespace first if it's missing. Expect `STATUS: deployed`, `REVISION: 1`, then the NOTES (NOTES.txt, filled in).
+- `helm list -n helm-demo`: the releases in that namespace: `web  helm-demo  1 … deployed  mychart-0.1.0  1.16.0`. APP VERSION is only what Chart.yaml claims; the image really is `nginx:1.27`.
+- `kubectl get deploy,pods,svc -n helm-demo`: commas list several kinds at once. Expect `web-mychart` 2/2, two Pods Running, `service/web-mychart` ClusterIP 80/TCP: ordinary Kubernetes objects.
+- `kubectl get secrets -n helm-demo`: shows `sh.helm.release.v1.web.v1`, the Secret holding Helm's record of revision 1.
+- `kubectl port-forward -n helm-demo svc/web-mychart 8080:80`: run it in a 2nd tab and leave it running. It opens a tunnel from port 8080 on your Mac to port 80 of the Service (`local:remote`).
+- `curl -I http://localhost:8080`: sends a request through the tunnel; `-I` = fetch only the response headers. Expect `HTTP/1.1 200 OK` and `Server: nginx/1.27.x`.
 The Service is `ClusterIP`, which your Mac can't reach directly, so the port-forward opens a tunnel. It really connects to **one Pod**, so after each upgrade it breaks (`lost connection to pod`): press Ctrl + C and run it again.
 
 **Upgrade, break, roll back:**
 ```bash
-helm upgrade web ./mychart -n helm-demo --set image.tag=1.28-alpine --set replicaCount=3   # Happy Helming! REVISION: 2
-kubectl get deploy web-mychart -n helm-demo -o wide   # -o wide adds the IMAGES column: 3/3, nginx:1.28-alpine
-helm upgrade web ./mychart -n helm-demo --set image.tag=9.99-nope --set replicaCount=3    # a typo'd tag: STATUS: deployed, REVISION: 3 (!)
-kubectl get pods -n helm-demo             # ~20 s later: 3 old Pods Running + 1 new Pod in ImagePullBackOff
-helm history web -n helm-demo             # revision 3: deployed   Upgrade complete (Helm thinks all is well)
-helm rollback web 2 -n helm-demo          # Rollback was a success! Happy Helming!
-helm history web -n helm-demo             # revision 4: deployed   Rollback to 2; revisions 1–3 superseded
-kubectl get pods -n helm-demo             # only 3 Running Pods remain
-helm get values web -n helm-demo          # USER-SUPPLIED VALUES: image: tag: 1.28-alpine, replicaCount: 3
+helm upgrade web ./mychart -n helm-demo --set image.tag=1.28-alpine --set replicaCount=3   # revision 2
+kubectl get deploy web-mychart -n helm-demo -o wide   # 3/3, nginx:1.28-alpine
+helm upgrade web ./mychart -n helm-demo --set image.tag=9.99-nope --set replicaCount=3    # typo'd tag → revision 3
+kubectl get pods -n helm-demo             # 1 Pod in ImagePullBackOff
+helm history web -n helm-demo             # revision 3 "deployed"
+helm rollback web 2 -n helm-demo          # back to revision 2's settings
+helm history web -n helm-demo             # revision 4: Rollback to 2
+kubectl get pods -n helm-demo             # 3 Running Pods
+helm get values web -n helm-demo          # the values you supplied
 helm upgrade web ./mychart -n helm-demo --set replicaCount=4   # revision 5
-kubectl get deploy web-mychart -n helm-demo -o wide   # 4/4, but the image is back to nginx:1.27: the --set trap
+kubectl get deploy web-mychart -n helm-demo -o wide   # image back to 1.27!
 ```
+**What each line does:**
+- `helm upgrade web ./mychart -n helm-demo --set image.tag=1.28-alpine --set replicaCount=3`: re-renders the chart with two overrides and applies it: `Happy Helming!`, `REVISION: 2`. `--set image.tag=…` sets the key `tag` inside `image`.
+- `kubectl get deploy web-mychart -n helm-demo -o wide`: `-o wide` = extra columns, including IMAGES. Expect 3/3 and `nginx:1.28-alpine`.
+- `helm upgrade … --set image.tag=9.99-nope …`: an upgrade to a tag that doesn't exist. Helm still says `STATUS: deployed`, `REVISION: 3`, because without `--wait` it doesn't wait for the Pods.
+- `kubectl get pods -n helm-demo`: ~20 s later, 3 old Pods still Running (the rolling update keeps them) + 1 new Pod in `ImagePullBackOff` (its image can't be downloaded).
+- `helm history web -n helm-demo`: every revision with STATUS and DESCRIPTION. Revision 3 says `deployed  Upgrade complete`: Helm thinks all is well.
+- `helm rollback web 2 -n helm-demo`: puts back revision 2's chart and values: `Rollback was a success! Happy Helming!`.
+- `helm history …` (again): revision 4 is `deployed  Rollback to 2`, and 1–3 are `superseded`. The rollback added a revision; it deleted none.
+- `kubectl get pods -n helm-demo` (again): the broken Pod is gone; only 3 Running Pods remain.
+- `helm get values web -n helm-demo`: the values **you** supplied for the live revision: `USER-SUPPLIED VALUES:` with `image: tag: 1.28-alpine` and `replicaCount: 3`.
+- `helm upgrade … --set replicaCount=4`: an upgrade that names only the replica count → revision 5.
+- `kubectl get deploy … -o wide` (again): 4/4, but the image is back to `nginx:1.27`, because the earlier `--set image.tag` was not remembered: the `--set` trap.
 ⚠️ Roll back to a revision you **know worked**. Revision 3 was also marked `deployed`, so "the latest deployed" isn't proof that it worked.
 
 **A public chart (optional, ~3 min), then clean up** (Ctrl + C the port-forward first):
 ```bash
 helm install my-nginx bitnami/nginx -n helm-demo --set service.type=ClusterIP
-kubectl get pods -n helm-demo -l app.kubernetes.io/instance=my-nginx   # my-nginx-nginx-… 1/1 Running after ~30 s
-helm uninstall my-nginx -n helm-demo      # release "my-nginx" uninstalled
-helm uninstall web -n helm-demo           # release "web" uninstalled
-helm history web -n helm-demo             # Error: release: not found (the history went too)
-kubectl delete namespace helm-demo        # keep the ~/devops-practice/helm folder for revision
+kubectl get pods -n helm-demo -l app.kubernetes.io/instance=my-nginx   # 1/1 Running after ~30 s
+helm uninstall my-nginx -n helm-demo      # remove the public chart
+helm uninstall web -n helm-demo           # remove your release
+helm history web -n helm-demo             # Error: release: not found
+kubectl delete namespace helm-demo        # keep ~/devops-practice/helm
 ```
+**What each line does:**
+- `helm install my-nginx bitnami/nginx -n helm-demo --set service.type=ClusterIP`: installs the public `nginx` chart from the `bitnami` repo as release `my-nginx`; `--set service.type=ClusterIP` keeps its Service internal instead of the chart's default LoadBalancer.
+- `kubectl get pods -n helm-demo -l app.kubernetes.io/instance=my-nginx`: `-l` = label selector, so only Pods with that label (= the release name) show. Expect `my-nginx-nginx-…  1/1 Running` after ~30 s.
+- `helm uninstall my-nginx …` / `helm uninstall web …`: delete each release's objects **and** its history; each prints `release "…" uninstalled`.
+- `helm history web -n helm-demo`: proves the history is gone too: `Error: release: not found`.
+- `kubectl delete namespace helm-demo`: removes the namespace you created today and anything left in it. Keep the `~/devops-practice/helm` folder for revision.
 `-l app.kubernetes.io/instance=my-nginx` works because Helm charts label every object with the release name. Bitnami's free images have been limited since Aug 2025: if its Pod shows `ImagePullBackOff`, that's the likely cause.
 
 ### ✅ Check 73

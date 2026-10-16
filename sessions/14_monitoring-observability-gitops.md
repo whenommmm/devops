@@ -4,11 +4,17 @@
 
 **Before you start:**
 ```bash
-colima status                          # Docker must be running
-minikube status                        # Kubernetes must be running (minikube start if not)
+colima status                          # Docker running?
+minikube status                        # Kubernetes running?
 kubectl get nodes                      # minikube   Ready
-lsof -iTCP:9090 -iTCP:3000 -sTCP:LISTEN   # nothing printed = ports 9090 and 3000 are free
+lsof -iTCP:9090 -iTCP:3000 -sTCP:LISTEN   # nothing printed = free
 ```
+**What each line does:**
+- `colima status`: checks that Colima (the Linux VM that runs Docker on your Mac) is up; you should see "colima is running".
+- `minikube status`: checks your local Kubernetes cluster; host, kubelet and apiserver should say `Running` (if not, run `minikube start`).
+- `kubectl get nodes`: lists the cluster's machines; the single node `minikube` should show `Ready`.
+- `lsof -iTCP:9090 -iTCP:3000 -sTCP:LISTEN`: lists programs listening on TCP port 9090 or 3000 (`lsof` = list open files; `-iTCP:9090` = this TCP port; `-sTCP:LISTEN` = only sockets waiting for connections). No output = both ports are free for Prometheus (9090) and Grafana (3000).
+
 > ⚠️ **Never remove the `minikube` or `localstack` containers.** Leave the `argocd`, `ingress-nginx` and `final-app` namespaces and the existing Argo CD Applications alone (your course assignment uses them).
 >
 > Text after `#` in commands is a note for you: don't type it (your zsh would pass it on as arguments), or run `setopt interactivecomments` first.
@@ -68,15 +74,25 @@ lsof -iTCP:9090 -iTCP:3000 -sTCP:LISTEN   # nothing printed = ports 9090 and 300
 ### 🛠 Do (~8 min): metrics vs logs, on your own containers
 ```bash
 docker run -d --name s14-web -p 8085:80 nginx:alpine                    # a small web server
-for i in 1 2 3; do curl -s -o /dev/null http://localhost:8085/; done    # 3 normal requests (page thrown away)
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8085/missing-page   # print only the status code: 404
-docker logs s14-web 2>&1 | tail -5                   # LOGS: one EVENT per line, e.g. "GET /missing-page HTTP/1.1" 404 (2>&1 adds the error log)
-docker logs s14-web 2>/dev/null | grep -c '" 404 '   # count the 404 lines: 1 (a metric would give this instantly)
-docker stats --no-stream s14-web                     # METRICS: NUMBERS (CPU %, memory, I/O, PIDs); stored every 15 s = time series
-kubectl top nodes                                    # node CPU (millicores) and memory, from metrics-server
-echo "30*24*60*0.001" | bc                           # the 99.9% error budget: 43.200 minutes
+for i in 1 2 3; do curl -s -o /dev/null http://localhost:8085/; done    # 3 normal requests
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8085/missing-page   # 404
+docker logs s14-web 2>&1 | tail -5                   # LOGS: one event per line
+docker logs s14-web 2>/dev/null | grep -c '" 404 '   # 1
+docker stats --no-stream s14-web                     # METRICS: numbers
+kubectl top nodes                                    # node CPU + memory
+echo "30*24*60*0.001" | bc                           # 43.200
 docker rm -f s14-web                                 # clean up
 ```
+**What each line does:**
+- `docker run -d --name s14-web -p 8085:80 nginx:alpine`: starts an nginx web server in the background (`-d` = detached), named `s14-web`; `-p 8085:80` = port 8085 on your Mac → port 80 in the container.
+- `for i in 1 2 3; do curl … ; done`: a shell loop that sends 3 normal requests to the home page; `-s` = silent (no progress bar), `-o /dev/null` = throw the page away, so nothing is printed.
+- `curl -s -o /dev/null -w "%{http_code}\n" …/missing-page`: asks for a page that doesn't exist; `-w` = after the request, write out only the HTTP status code. You should see `404`.
+- `docker logs s14-web 2>&1 | tail -5`: shows the container's last 5 log lines (`tail -5`); `2>&1` merges the error stream into normal output, so nginx's error log shows too. These are **logs**: one event per line, e.g. `"GET /missing-page HTTP/1.1" 404`.
+- `docker logs s14-web 2>/dev/null | grep -c '" 404 '`: `2>/dev/null` throws the error stream away; `grep -c` counts matching lines instead of printing them. You should see `1`; digging through logs is slow, while a metric would give this count instantly.
+- `docker stats --no-stream s14-web`: shows **metrics**: CPU %, memory, network/disk I/O, PIDs (number of processes); `--no-stream` = print once and exit instead of refreshing. Recorded every 15 s, such numbers become a time series.
+- `kubectl top nodes`: the node's CPU (in millicores: 1000m = 1 core) and memory right now, read from metrics-server.
+- `echo "30*24*60*0.001" | bc`: `bc` is a command-line calculator; this works out the 99.9% error budget for 30 days: `43.200` minutes.
+- `docker rm -f s14-web`: removes the container; `-f` = force (stop it first if it's running).
 
 ### ✅ Check 82
 **82.1** Users report "checkout is slow". Your dashboard shows p95 latency for checkout jumped from 300 ms to 2 s, and nothing else looks wrong. Which signal best shows **which service** in the chain is slow?
@@ -164,11 +180,21 @@ services:
 volumes:
   grafana-data:
 EOF
-docker compose config --quiet && echo "compose file OK"    # validate the YAML: compose file OK
-docker compose up -d && docker compose ps                   # monitoring-prometheus-1 and monitoring-grafana-1, both Up
+docker compose config --quiet && echo "compose file OK"    # compose file OK
+docker compose up -d && docker compose ps                   # both Up
 curl -s http://localhost:9090/metrics | grep "^prometheus_http_requests_total" | head -3   # raw counter lines
-curl -s 'http://localhost:9090/api/v1/query?query=up'      # the HTTP API Grafana uses: JSON, "status":"success"
+curl -s 'http://localhost:9090/api/v1/query?query=up'      # JSON, "status":"success"
 ```
+**What each line does:**
+- `mkdir -p … && cd …`: makes the project folder (`-p` = also make missing parent folders, no error if it already exists) and moves into it; `&&` = run the next command only if the one before it worked.
+- `cat > prometheus.yml <<'EOF'` … `EOF`: a **heredoc**: writes every line up to `EOF` into `prometheus.yml` (`>` = create or overwrite the file); the quotes around `'EOF'` stop the shell from changing `$` or backticks inside the text. This config tells Prometheus to scrape itself and Grafana every 15 s.
+- `cat > compose.yaml <<'EOF'` … `EOF`: the same trick for the Compose file: Prometheus on port 9090 with our config bind-mounted read-only (`:ro`), and Grafana on port 3000 with a named volume for its data.
+- `docker compose config --quiet && echo "compose file OK"`: checks the Compose file for mistakes; `--quiet` = print nothing if it's valid, so you see only `compose file OK`.
+- `docker compose up -d && docker compose ps`: creates and starts both containers in the background (`-d`), then lists them: `monitoring-prometheus-1` and `monitoring-grafana-1`, both `Up`.
+- `curl -s http://localhost:9090/metrics | grep "^prometheus_http_requests_total" | head -3`: fetches Prometheus's own `/metrics` page, keeps only lines that **start with** (`^`) that counter's name, and shows the first 3 (`head -3`): raw `name{labels} value` lines.
+- `curl -s 'http://localhost:9090/api/v1/query?query=up'`: runs the PromQL query `up` through Prometheus's HTTP API (the same API Grafana uses); you get JSON with `"status":"success"` and a value of `1` per target. The single quotes stop zsh from treating `?` as a filename wildcard.
+
+**Then, in the browser:**
 - Open **http://localhost:9090** → **Status → Target health**: `prometheus` and `grafana` both **UP**. On the **Query** page run `up`: `up{instance="grafana:3000", job="grafana"} 1` and the same for prometheus (`instance` and `job` are added automatically).
 - After a minute (so `rate()` has two samples) try: `prometheus_http_requests_total` (many series: labels!) · `prometheus_http_requests_total{handler="/metrics"}` (only grows: a counter)
   - `rate(prometheus_http_requests_total{handler="/metrics"}[1m])` ≈ **0.067** (one scrape per 15 s; see the **Graph** tab)
@@ -305,22 +331,36 @@ Argo CD is **already installed** on your Mac, so skip the install.
 - ⚠️ Leave the existing Applications alone.
 - ⚠️ **Apple Silicon:** the guestbook image is **amd64 only**; Colima usually emulates it, but if its Pod shows `CrashLoopBackOff` / `exec format error`, the app is **Synced but Degraded**: a real "Synced ≠ Healthy" example.
 ```bash
-kubectl get pods -n argocd      # ~7 Pods Running (argocd-server, repo-server, application-controller…)
-kubectl port-forward svc/argocd-server -n argocd 8080:443   # in a SECOND tab; open https://localhost:8080 (self-signed cert: Advanced → Proceed)
+kubectl get pods -n argocd      # ~7 Pods Running
+kubectl port-forward svc/argocd-server -n argocd 8080:443   # in a SECOND tab
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo   # admin's password
 mkdir -p ~/devops-practice/gitops && cd ~/devops-practice/gitops
-code guestbook-app.yaml                                     # paste the Application YAML above, save
-kubectl apply -f guestbook-app.yaml                         # "application.argoproj.io/guestbook created" (a finalizer Warning is harmless)
-kubectl get applications -n argocd                          # guestbook   Synced   Healthy (others may be listed too)
-kubectl get all -n guestbook                                # Deployment + Service guestbook-ui, created by Argo CD, not by you
+code guestbook-app.yaml                                     # paste the YAML above, save
+kubectl apply -f guestbook-app.yaml                         # guestbook created
+kubectl get applications -n argocd                          # Synced   Healthy
+kubectl get all -n guestbook                                # created by Argo CD
 kubectl scale deployment guestbook-ui --replicas=3 -n guestbook   # make drift…
-kubectl get deployment guestbook-ui -n guestbook -w         # …3, then back to 1 within seconds (self-heal); Ctrl + C
+kubectl get deployment guestbook-ui -n guestbook -w         # …back to 1; Ctrl + C
 kubectl patch application guestbook -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'   # (optional) self-heal off
 kubectl scale deployment guestbook-ui --replicas=3 -n guestbook   # 3 stays
 kubectl get applications -n argocd guestbook                # OutOfSync
-kubectl delete -f guestbook-app.yaml                        # clean up (finalizer removes its resources)
+kubectl delete -f guestbook-app.yaml                        # clean up
 kubectl delete namespace guestbook --ignore-not-found       # then Ctrl + C the port-forward
 ```
+**What each line does:**
+- `kubectl get pods -n argocd`: lists the Pods in the `argocd` namespace (`-n` = namespace); about 7 should be `Running` (argocd-server, repo-server, application-controller, redis, dex-server…).
+- `kubectl port-forward svc/argocd-server -n argocd 8080:443`: forwards port 8080 on your Mac to port 443 (HTTPS) of the `argocd-server` Service. It keeps running, so do it in a second terminal tab, then open https://localhost:8080 (self-signed certificate warning: **Advanced → Proceed**).
+- `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo`: reads the Secret holding admin's first password; `-o jsonpath=…` prints only its `password` field, `base64 -d` decodes it (Secret values are stored base64-encoded), and `echo` adds a newline so your prompt doesn't stick to it. Log in as `admin` with it.
+- `mkdir -p … && cd …` and `code guestbook-app.yaml`: make a practice folder and open a new file in VS Code; paste the Application YAML above and save.
+- `kubectl apply -f guestbook-app.yaml`: creates the Application from the file (`-f` = file): `application.argoproj.io/guestbook created` (a Warning about the finalizer is harmless). Argo CD now clones the repo and deploys the `guestbook` folder.
+- `kubectl get applications -n argocd`: lists Argo CD Applications with sync and health status: `guestbook   Synced   Healthy` (your course Applications may be listed too).
+- `kubectl get all -n guestbook`: shows the Deployment, ReplicaSet, Pod and Service `guestbook-ui` that Argo CD created from Git; you never applied them yourself.
+- `kubectl scale deployment guestbook-ui --replicas=3 -n guestbook`: changes the cluster by hand to 3 Pods while Git says 1: this is **drift**.
+- `kubectl get deployment guestbook-ui -n guestbook -w`: `-w` = watch (keep printing changes). You see 3, then back to 1 within seconds: **self-heal** undid the drift. Ctrl + C stops watching.
+- `kubectl patch application guestbook -n argocd --type merge -p '…'`: (optional) changes one field of the live Application in place; `-p` = the patch (JSON), `--type merge` = merge it into the existing object. Here it sets `selfHeal: false`.
+- `kubectl scale … --replicas=3` again, then `kubectl get applications -n argocd guestbook`: without self-heal the 3 Pods **stay**, and Argo CD only reports `OutOfSync` (drift detected, not fixed).
+- `kubectl delete -f guestbook-app.yaml`: deletes the Application; its finalizer makes Argo CD delete the guestbook resources too.
+- `kubectl delete namespace guestbook --ignore-not-found`: removes the namespace; `--ignore-not-found` = no error if it's already gone. Then press Ctrl + C in the port-forward tab.
 
 ### ✅ Check 85
 **85.1** Which is **NOT** one of the four GitOps principles?

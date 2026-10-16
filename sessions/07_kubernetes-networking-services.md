@@ -4,11 +4,18 @@
 
 **Before you start:**
 ```bash
-minikube status          # host, kubelet, apiserver: Running (if not: minikube start, then wait ~1 min)
+minikube status          # all Running?
 kubectl get nodes        # minikube   Ready
-kubectl get deploy,svc   # your Deployments AND Services (the comma = both kinds at once)
+kubectl get deploy,svc   # Deployments + Services
 mkdir -p ~/devops-practice/k8s-services && cd ~/devops-practice/k8s-services
 ```
+**What each line does:**
+- `minikube status`: checks that your local cluster is up. You should see `host`, `kubelet` and `apiserver` all `Running`; if not, run `minikube start` and wait about a minute.
+- `kubectl get nodes`: lists the machines (nodes) in the cluster. You should see one node, `minikube`, with STATUS `Ready`.
+- `kubectl get deploy,svc`: lists your Deployments **and** Services in one go (the comma = several kinds at once; `deploy` and `svc` are short names).
+- `mkdir -p … && cd …`: makes this session's practice folder (`-p` = also create missing parent folders, no error if it exists) and moves into it; `&&` = run the second command only if the first one worked.
+
+**Notes:**
 - You'll see `service/kubernetes`: Kubernetes' own Service for the API server. **Never delete it.** If a Deployment `web` is left over from last session, remove it: `kubectl delete deployment web`.
 - ⚠️ Never delete the `minikube` or `localstack` containers, and leave the other namespaces (`kube-system`, `ingress-nginx`, `argocd`, `final-app`…) alone.
 
@@ -81,19 +88,32 @@ What's needed is **one stable address** that always leads to "whichever backend 
 ### 🛠 Do (~10 min)
 ```bash
 kubectl create deployment web --image=nginx:1.27 --replicas=3 --port=80 --dry-run=client -o yaml > web-deploy.yaml   # only WRITES the YAML
-kubectl apply -f web-deploy.yaml             # 3 nginx Pods labelled app=web (Services will use it), containerPort 80
-kubectl rollout status deployment/web        # deployment "web" successfully rolled out
-kubectl get pods -l app=web -o wide          # -o wide adds IP and NODE: three 10.244.0.x IPs, all on minikube
+kubectl apply -f web-deploy.yaml             # 3 nginx Pods
+kubectl rollout status deployment/web        # successfully rolled out
+kubectl get pods -l app=web -o wide          # three 10.244.0.x IPs
 kubectl run -it --rm pod-test --image=busybox:1.36 --restart=Never -- sh   # a temporary Pod you can type in
 ```
-*(`-it` = type inside it, like `docker run -it`; `--rm` = delete it when you leave; **busybox** = a tiny image full of basic tools such as `wget` and `nslookup`; `--restart=Never` = a plain Pod that isn't restarted when its command ends.)* At the `/ #` prompt you're **inside a Pod**:
+**What each line does:**
+- `kubectl create deployment web … > web-deploy.yaml`: builds a Deployment named `web` but only **writes its YAML** to a file. `--image` = the container image; `--replicas=3` = keep 3 Pods; `--port=80` = adds `containerPort: 80`; `--dry-run=client` = pretend only, nothing is sent to the cluster; `-o yaml` = print it as YAML; `>` = save that output into the file.
+- `kubectl apply -f web-deploy.yaml`: creates the Deployment from the file (`-f` = file): 3 nginx Pods labelled `app=web` (the label Services will use later).
+- `kubectl rollout status deployment/web`: waits until all Pods are up, then prints `deployment "web" successfully rolled out`.
+- `kubectl get pods -l app=web -o wide`: lists only the Pods labelled `app=web` (`-l` = label selector); `-o wide` adds the IP and NODE columns. You should see three different `10.244.0.x` IPs, all on `minikube`.
+- `kubectl run -it --rm pod-test --image=busybox:1.36 --restart=Never -- sh`: starts a temporary Pod and opens a shell in it. `-it` = type inside it, like `docker run -it`; `--rm` = delete it when you leave; **busybox** = a tiny image full of basic tools such as `wget` and `nslookup`; `--restart=Never` = a plain Pod that isn't restarted when its command ends; `-- sh` = everything after `--` is the command to run in it (a shell).
+
+At the `/ #` prompt you're **inside a Pod**:
 ```bash
-wget -qO- http://10.244.0.102 | head -4      # (YOUR Pod IP) <title>Welcome to nginx!</title>: Pod → Pod, directly. Then: exit
+wget -qO- http://10.244.0.102 | head -4      # (YOUR Pod IP) Welcome to nginx! Then: exit
 kubectl delete pod <one-of-your-pod-names>
-kubectl get pods -l app=web -o wide          # the replacement: new name, young AGE, usually a new IP
-kubectl get pods -n kube-system              # kindnet-… (the CNI plugin), kube-proxy-… (writes the Service forwarding rules), coredns-… (the cluster's DNS server)
-kubectl get node minikube -o jsonpath='{.spec.podCIDR}{"\n"}'   # prints just one field of the node: 10.244.0.0/24
+kubectl get pods -l app=web -o wide          # a replacement Pod
+kubectl get pods -n kube-system              # the cluster's own helper Pods
+kubectl get node minikube -o jsonpath='{.spec.podCIDR}{"\n"}'   # 10.244.0.0/24
 ```
+**What each line does:**
+- `wget -qO- http://10.244.0.102 | head -4`: (inside the busybox Pod; use one of YOUR Pod IPs from the `-o wide` list) downloads nginx's page straight from another Pod's IP. `-q` = quiet (no progress bar); `-O-` = write the page to the screen instead of a file; `| head -4` = show only the first 4 lines. You should see `<title>Welcome to nginx!</title>`: Pod → Pod, directly. Then type `exit` (the Pod is deleted, thanks to `--rm`).
+- `kubectl delete pod <one-of-your-pod-names>`: (back on the Mac) deletes one of the `web` Pods, to see what happens to its IP.
+- `kubectl get pods -l app=web -o wide`: the ReplicaSet has already made a replacement: new name, young AGE, and usually a **new IP**. That's why Pod IPs can't be hard-coded.
+- `kubectl get pods -n kube-system`: lists the Pods in the `kube-system` namespace (`-n` = namespace), where Kubernetes' own helpers run: `kindnet-…` (the CNI plugin), `kube-proxy-…` (writes the Service forwarding rules), `coredns-…` (the cluster's DNS server).
+- `kubectl get node minikube -o jsonpath='{.spec.podCIDR}{"\n"}'`: prints just one field of the node (`-o jsonpath` = pick a field by its path; `{"\n"}` = add a line break). You should see `10.244.0.0/24`, this node's slice of the Pod CIDR.
 
 ### ✅ Check 54
 **54.1** A Pod has two containers: `app` (listening on port 8080) and `helper`. How does `helper` reach `app`?
@@ -157,26 +177,43 @@ A Service's `spec.type` decides **who can reach it**. Each type **builds on** th
 
 ### 🛠 Do (~15 min)
 ```bash
-kubectl expose deployment web --port=80 --target-port=80   # Service "web"; copies the selector app=web; no --type = ClusterIP
-kubectl get svc -o wide      # web  ClusterIP  10.97.95.169  <none>  80/TCP … app=web
+kubectl expose deployment web --port=80 --target-port=80   # Service "web" (ClusterIP)
+kubectl get svc -o wide      # web  ClusterIP  10.97.95.169 …
 kubectl run -it --rm client --image=busybox:1.36 --restart=Never -- sh
-wget -qO- http://web | head -4               # (inside) nginx's page by NAME; repeat it and a different Pod may answer
-wget -qO- http://10.97.95.169 | head -4      # (inside; YOUR ClusterIP) the same page by IP. Then: exit
-curl -m 5 http://10.97.95.169                # (on the Mac; -m 5 = give up after 5 s) Connection timed out: inside-only
+wget -qO- http://web | head -4               # (inside) by NAME
+wget -qO- http://10.97.95.169 | head -4      # (inside; YOUR ClusterIP) by IP. Then: exit
+curl -m 5 http://10.97.95.169                # (on the Mac) times out
 ```
-*`--port` = the port the Service listens on; `--target-port` = the port on the Pods, where the app really listens. The CLUSTER-IP comes from a separate range (`10.96.0.0/12`), not the Pod range.*
+**What each line does:**
+- `kubectl expose deployment web --port=80 --target-port=80`: creates a Service named `web` (same name as the Deployment) and copies its selector `app=web`. `--port` = the port the Service listens on; `--target-port` = the port on the Pods, where the app really listens. No `--type`, so it's a **ClusterIP** (inside-only).
+- `kubectl get svc -o wide`: lists Services; `-o wide` adds the SELECTOR column. You should see `web  ClusterIP  10.97.95.169  <none>  80/TCP … app=web`. The CLUSTER-IP comes from a separate range (`10.96.0.0/12`), not the Pod range.
+- `kubectl run -it --rm client … -- sh`: a temporary busybox Pod to test from (same flags as before).
+- `wget -qO- http://web | head -4`: (inside) fetches nginx's page by the Service's **name**. Repeat it a few times: a different Pod may answer each time (load balancing).
+- `wget -qO- http://10.97.95.169 | head -4`: (inside; use YOUR ClusterIP) the same page through the Service's IP. Then `exit`.
+- `curl -m 5 http://10.97.95.169`: (on the Mac) tries the ClusterIP from outside the cluster; `-m 5` = give up after 5 seconds. You should get `Connection timed out`: a ClusterIP works only inside.
 ```bash
 kubectl expose deployment web --type=NodePort --port=80 --name=web-np
-kubectl get svc web-np                       # 80:31474/TCP = Service port : nodePort (it still has a CLUSTER-IP)
-curl -m 5 http://$(minikube ip):31474        # (YOUR nodePort) $(minikube ip) → 192.168.49.2; times out from the Mac
-minikube service web-np --url                # http://127.0.0.1:58168 + "the terminal needs to be open"
-curl -I http://127.0.0.1:58168               # (in Tab 2, Cmd + T; YOUR port) HTTP/1.1 200 OK. Then Ctrl + C in Tab 1
-kubectl port-forward svc/web 8080:80         # Mac 8080 → 80 (the order of -p HOST:CONTAINER)
-curl -I http://localhost:8080                # (in Tab 2) HTTP/1.1 200 OK. Then Ctrl + C in Tab 1
+kubectl get svc web-np                       # 80:31474/TCP
+curl -m 5 http://$(minikube ip):31474        # (YOUR nodePort) times out
+minikube service web-np --url                # http://127.0.0.1:58168
+curl -I http://127.0.0.1:58168               # (Tab 2; YOUR port) 200 OK. Then Ctrl + C in Tab 1
+kubectl port-forward svc/web 8080:80         # Mac 8080 → Service port 80
+curl -I http://localhost:8080                # (Tab 2) 200 OK. Then Ctrl + C in Tab 1
 kubectl expose deployment web --type=LoadBalancer --port=8080 --target-port=80 --name=web-lb   # optional
-kubectl get svc web-lb                       # EXTERNAL-IP <pending>: no cloud to build a load balancer
-kubectl delete svc web-lb                    # (optionally run minikube tunnel in Tab 2 first → 127.0.0.1; untested on your Mac)
+kubectl get svc web-lb                       # EXTERNAL-IP <pending>
+kubectl delete svc web-lb
 ```
+**What each line does:**
+- `kubectl expose deployment web --type=NodePort --port=80 --name=web-np`: a second Service for the same Pods, this time a **NodePort**. `--type` = the Service type; `--name` = its name (needed, as `web` is taken). With no `--target-port`, it uses the same number as `--port` (80).
+- `kubectl get svc web-np`: PORT(S) shows `80:31474/TCP` = Service port : nodePort (yours will differ, picked from 30000–32767). It still has a CLUSTER-IP, as every NodePort Service does.
+- `curl -m 5 http://$(minikube ip):31474`: (use YOUR nodePort) `$(minikube ip)` is replaced by the node's IP, `192.168.49.2`. It **times out** from the Mac, which has no route to the node inside Colima's VM.
+- `minikube service web-np --url`: opens a tunnel from your Mac to the Service and prints a URL like `http://127.0.0.1:58168`, plus a note that the terminal must stay open. Leave it running.
+- `curl -I http://127.0.0.1:58168`: (in a second tab, Cmd + T; use YOUR port) `-I` = fetch only the response headers. You should see `HTTP/1.1 200 OK`. Then press Ctrl + C in Tab 1 to close the tunnel.
+- `kubectl port-forward svc/web 8080:80`: carries your Mac's port 8080 to port 80 of the Service `web` (really to one of its Pods). The order is `MAC:SERVICE`, like Docker's `-p HOST:CONTAINER`. It keeps the terminal busy.
+- `curl -I http://localhost:8080`: (in Tab 2) `HTTP/1.1 200 OK`. Then Ctrl + C in Tab 1.
+- `kubectl expose … --type=LoadBalancer --port=8080 --target-port=80 --name=web-lb`: (optional) a LoadBalancer Service that listens on 8080 and delivers to the Pods' port 80.
+- `kubectl get svc web-lb`: EXTERNAL-IP stays `<pending>`: there's no cloud to build a load balancer. (Running `minikube tunnel` in Tab 2 would give it `127.0.0.1`; untested on your Mac.)
+- `kubectl delete svc web-lb`: removes it again.
 
 ### ✅ Check 55
 **55.1** `kubectl get svc` shows:
@@ -271,25 +308,43 @@ Two errors, two meanings: **connection refused** = something answered at once, "
 ### 🛠 Do (~15 min)
 ```bash
 code web-svc.yaml                      # paste the worked-example YAML, save
-kubectl apply -f web-svc.yaml          # ("provided port is already allocated"? use nodePort 30081)
-kubectl get svc web-demo               # web-demo   NodePort   10.105.180.161   <none>   8080:30080/TCP
-kubectl describe svc web-demo          # Port http 8080/TCP · TargetPort 80/TCP · NodePort 30080 · Endpoints 10.244.0.102:80,…
-kubectl get endpoints web-demo         # "Warning: v1 Endpoints is deprecated…" (harmless) + the same Pod-IP:80 list
-kubectl get endpointslices -l kubernetes.io/service-name=web-demo   # the same IPs, in the newer format
-kubectl run client --image=busybox:1.36 --restart=Never -- sleep 3600   # a client Pod that stays Running for an hour
-kubectl exec client -- wget -qO- -T 3 http://web-demo:8080 | head -4    # exec = run one command inside (like docker exec); -T 3 = 3 s limit
-kubectl exec client -- wget -qO- -T 3 http://web-demo                   # wget: download timed out (the Service has no port 80)
+kubectl apply -f web-svc.yaml          # creates web-demo
+kubectl get svc web-demo               # 8080:30080/TCP
+kubectl describe svc web-demo          # ports + Endpoints
+kubectl get endpoints web-demo         # the Pod-IP:80 list
+kubectl get endpointslices -l kubernetes.io/service-name=web-demo   # the newer format
+kubectl run client --image=busybox:1.36 --restart=Never -- sleep 3600   # a client Pod for an hour
+kubectl exec client -- wget -qO- -T 3 http://web-demo:8080 | head -4    # nginx's page
+kubectl exec client -- wget -qO- -T 3 http://web-demo                   # times out
 ```
+**What each line does:**
+- `code web-svc.yaml`: opens a new file in VS Code; paste the worked-example YAML above and save.
+- `kubectl apply -f web-svc.yaml`: creates the Service `web-demo`. If you see `provided port is already allocated`, another Service already uses nodePort 30080: change it to `30081`.
+- `kubectl get svc web-demo`: `web-demo   NodePort   10.105.180.161   <none>   8080:30080/TCP` = Service port 8080, nodePort 30080.
+- `kubectl describe svc web-demo`: the full details. Check `Port http 8080/TCP`, `TargetPort 80/TCP`, `NodePort 30080` and `Endpoints 10.244.0.102:80,…` (the Pods it found).
+- `kubectl get endpoints web-demo`: just the Endpoints list (the same Pod-IP:80 entries). The `Warning: v1 Endpoints is deprecated…` line is harmless.
+- `kubectl get endpointslices -l kubernetes.io/service-name=web-demo`: the same IPs in the newer EndpointSlice format. Each slice carries its Service's name as a label, so `-l` finds it.
+- `kubectl run client --image=busybox:1.36 --restart=Never -- sleep 3600`: a client Pod whose only job is to sleep for 3600 s, so it stays `Running` for an hour and you can send commands into it. No `-it`, so you're not dropped inside.
+- `kubectl exec client -- wget -qO- -T 3 http://web-demo:8080 | head -4`: `exec` = run one command inside a running Pod (like `docker exec`); everything after `--` is that command. `-T 3` = wget gives up after 3 seconds. You should see nginx's page: Service port 8080 works.
+- `kubectl exec client -- wget -qO- -T 3 http://web-demo`: no port means port 80, which this Service doesn't have, so you get `wget: download timed out`.
+
 *(After an hour the client Pod finishes; if `exec` complains, run `kubectl delete pod client` and start it again.)*
 
 **Break the selector:** in `web-svc.yaml`, change `app: web` to **`app: wbe`** (a typo), then:
 ```bash
 kubectl apply -f web-svc.yaml
 kubectl get endpoints web-demo                                          # ENDPOINTS <none>
-kubectl exec client -- wget -qO- -T 3 http://web-demo:8080              # can't connect to remote host … Connection refused
-kubectl describe svc web-demo | grep -E 'Selector|Endpoints'            # grep -E 'A|B' = A or B → Selector: app=wbe, empty Endpoints
-kubectl get pods --show-labels         # the Pods say app=web: mismatch found. Fix it back, apply, check the endpoints again
+kubectl exec client -- wget -qO- -T 3 http://web-demo:8080              # Connection refused
+kubectl describe svc web-demo | grep -E 'Selector|Endpoints'            # Selector: app=wbe
+kubectl get pods --show-labels         # the Pods say app=web
 ```
+**What each line does:**
+- `kubectl apply -f web-svc.yaml`: updates the Service with the broken selector `app=wbe`.
+- `kubectl get endpoints web-demo`: ENDPOINTS shows `<none>`: no Pod has the label `app=wbe`.
+- `kubectl exec client -- wget … http://web-demo:8080`: now fails with `can't connect to remote host … Connection refused`: the Service exists, but has nowhere to send the traffic.
+- `kubectl describe svc web-demo | grep -E 'Selector|Endpoints'`: keeps only the lines containing `Selector` or `Endpoints` (`grep -E 'A|B'` = lines with A or B). You'll see `Selector: app=wbe` and an empty `Endpoints:`.
+- `kubectl get pods --show-labels`: adds a LABELS column. The Pods say `app=web`: mismatch found. Fix the typo back to `app: web`, apply again, and check that the endpoints are back.
+
 **Break the targetPort:** change `targetPort: 80` to `8080`, apply, and run `kubectl get endpoints web-demo` and the `wget` again: the endpoints **are** listed this time, but as `…:8080`, and you get `Connection refused` again. Same error, different cause; the Endpoints line tells them apart. Change it back to `80` and apply.
 
 ### ✅ Check 56
@@ -370,23 +425,39 @@ busybox's `nslookup` tries each search ending and prints a line for every miss, 
 ### 🛠 Do (~12 min)
 ```bash
 kubectl run -it --rm dns-test --image=busybox:1.36 --restart=Never -- sh
-cat /etc/resolv.conf                          # (inside) the search, nameserver 10.96.0.10 and ndots:5 lines
-nslookup web                                  # NXDOMAIN lines, then Name: web.default.svc.cluster.local · Address: <web's CLUSTER-IP>
-nslookup web.default.svc.cluster.local        # just the Name/Address answer
-wget -qO- http://web.default.svc.cluster.local | head -4   # nginx's page via the full name
-nslookup kube-dns.kube-system.svc.cluster.local            # Address: 10.96.0.10, the DNS Service itself
-env | grep WEB                                # WEB_SERVICE_HOST=…, WEB_SERVICE_PORT=80, WEB_NP_…, WEB_DEMO_… Then: exit
+cat /etc/resolv.conf                          # (inside) the DNS settings
+nslookup web                                  # Name: web.default.svc.cluster.local
+nslookup web.default.svc.cluster.local        # just the answer
+wget -qO- http://web.default.svc.cluster.local | head -4   # nginx's page
+nslookup kube-dns.kube-system.svc.cluster.local            # 10.96.0.10
+env | grep WEB                                # WEB_… variables. Then: exit
 kubectl create namespace dns-demo
 kubectl run -it --rm far-client -n dns-demo --image=busybox:1.36 --restart=Never -- sh
-wget -qO- -T 3 http://web                     # (inside) wget: bad address 'web' (no web Service in dns-demo)
-wget -qO- -T 3 http://web.default | head -4   # works: it names the namespace. Then: exit
+wget -qO- -T 3 http://web                     # (inside) bad address 'web'
+wget -qO- -T 3 http://web.default | head -4   # works. Then: exit
 kubectl delete namespace dns-demo             # deletes everything inside it
-kubectl get pods -n kube-system -l k8s-app=kube-dns   # one coredns-… Pod Running (the label keeps the old name)
-kubectl get svc -n kube-system kube-dns       # 10.96.0.10  53/UDP,53/TCP,9153/TCP: DNS port 53 (mostly UDP); 9153 = metrics
+kubectl get pods -n kube-system -l k8s-app=kube-dns   # one coredns-… Pod
+kubectl get svc -n kube-system kube-dns       # 10.96.0.10, port 53
 kubectl delete pod client                     # clean up
-kubectl delete svc web web-np web-demo        # (and web-lb, if made); the "kubernetes" Service stays
+kubectl delete svc web web-np web-demo        # (and web-lb, if made)
 kubectl delete deployment web
 ```
+**What each line does:**
+- `kubectl run -it --rm dns-test … -- sh`: a temporary busybox Pod in `default` to test DNS from.
+- `cat /etc/resolv.conf`: (inside) prints the Pod's DNS settings: the `search` line (endings tried on short names), `nameserver 10.96.0.10` (CoreDNS) and `options ndots:5`.
+- `nslookup web`: asks DNS for the short name `web`. Ignore the `NXDOMAIN` lines (missed search endings); the real answer is `Name: web.default.svc.cluster.local` with `Address:` = web's CLUSTER-IP.
+- `nslookup web.default.svc.cluster.local`: the full name (FQDN), so no endings are tried: just the Name/Address answer.
+- `wget -qO- http://web.default.svc.cluster.local | head -4`: fetches nginx's page through the full name.
+- `nslookup kube-dns.kube-system.svc.cluster.local`: looks up the DNS Service itself: `Address: 10.96.0.10`.
+- `env | grep WEB`: lists the environment variables and keeps only lines containing `WEB`: `WEB_SERVICE_HOST=…`, `WEB_SERVICE_PORT=80`, `WEB_NP_…`, `WEB_DEMO_…` (Services that existed when this Pod started). Then `exit`.
+- `kubectl create namespace dns-demo`: a new, empty namespace, to test calls across namespaces.
+- `kubectl run -it --rm far-client -n dns-demo … -- sh`: the same kind of test Pod, but inside `dns-demo` (`-n` = namespace).
+- `wget -qO- -T 3 http://web`: (inside) fails with `wget: bad address 'web'`: the short name is tried as `web.dns-demo.svc.cluster.local`, which doesn't exist.
+- `wget -qO- -T 3 http://web.default | head -4`: works, because it names the namespace `default`. Then `exit`.
+- `kubectl delete namespace dns-demo`: deletes the namespace and everything inside it.
+- `kubectl get pods -n kube-system -l k8s-app=kube-dns`: the DNS server's Pod: one `coredns-…` Pod `Running` (the label still uses the old name `kube-dns`).
+- `kubectl get svc -n kube-system kube-dns`: the DNS Service: `10.96.0.10` with `53/UDP,53/TCP,9153/TCP`. Port 53 = DNS (mostly UDP); 9153 = CoreDNS's metrics.
+- `kubectl delete pod client` / `delete svc web web-np web-demo` / `delete deployment web`: clean up the client Pod, the three Services (also `web-lb`, if you made it and kept it) and the Deployment. The `kubernetes` Service stays.
 
 ### ✅ Check 57
 **57.1** A Pod in the namespace `shop` runs `curl http://payments:9000`. The `payments` Service exists only in the namespace `billing`. What happens?

@@ -6,10 +6,15 @@
 
 **Before you start:**
 ```bash
-minikube status        # Running (if not: minikube start)
+minikube status        # Running?
 kubectl get nodes      # minikube   Ready
 mkdir -p ~/devops-practice/k8s-vi/lab && cd ~/devops-practice/k8s-vi   # session folder + a lab folder
 ```
+**What each line does:**
+- `minikube status`: checks that your local cluster is up: `host`, `kubelet` and `apiserver` should say `Running` (if not: `minikube start`).
+- `kubectl get nodes`: lists the cluster's nodes; you should see `minikube` with STATUS `Ready`.
+- `mkdir -p … && cd …`: makes the session folder **and** a `lab` folder inside it in one go (`-p` = also create missing parent folders, no error if they exist), then moves into the session folder (`&&` = only if `mkdir` worked).
+
 > ⚠️ **Never delete the `minikube` or `localstack` containers**, and leave alone namespaces/resources you didn't create (`argocd`, `ingress-nginx`, `final-app`). Today everything runs in `default`, with names starting `tour`, `crash-`, `pull-`, `pending-`, `bind-`, `dns-` or `lab-`.
 
 ---
@@ -97,22 +102,37 @@ READY `0/1` means 0 of the Pod's 1 containers are ready. **STATUS** is the most 
 
 ### 🛠 Do (~12 min): a toolkit tour on a healthy app
 ```bash
-kubectl create deployment tour --image=nginx:1.27 --replicas=2   # 2 Pods, labelled app=tour automatically
-kubectl expose deployment tour --port=80                         # a ClusterIP Service "tour" (a stable in-cluster IP + name in front of the Pods)
-kubectl get pods -o wide                     # 1/1 Running, IP 10.244.0.x, NODE minikube
-kubectl get pods --show-labels               # app=tour,pod-template-hash=… (the hash tells ReplicaSets apart)
-kubectl describe pod <one-tour-pod-name>     # Events all Normal: Scheduled, Pulled, Created, Started = healthy
-kubectl logs deploy/tour --tail=3            # Found 2 pods, using pod/tour-…, then nginx's start-up lines
-kubectl exec -it deploy/tour -- sh           # now inside a Pod (prompt #); try the next three lines there
-curl -s localhost | head -4                  #   the app answers inside its own Pod
-cat /etc/resolv.conf                         #   the DNS settings Kubernetes gave the Pod (its nameserver = the cluster DNS)
+kubectl create deployment tour --image=nginx:1.27 --replicas=2   # 2 Pods, labelled app=tour
+kubectl expose deployment tour --port=80                         # a ClusterIP Service "tour"
+kubectl get pods -o wide                     # 1/1 Running, IP, NODE
+kubectl get pods --show-labels               # app=tour,pod-template-hash=…
+kubectl describe pod <one-tour-pod-name>     # Events all Normal
+kubectl logs deploy/tour --tail=3            # nginx's last start-up lines
+kubectl exec -it deploy/tour -- sh           # now inside a Pod (prompt #)
+curl -s localhost | head -4                  #   (inside) the app answers
+cat /etc/resolv.conf                         #   (inside) the DNS settings
 exit                                         #   leave the Pod
-kubectl port-forward svc/tour 8090:80        # Forwarding from 127.0.0.1:8090 -> 80 (Ctrl + C stops)
-curl -s localhost:8090 | head -4             # in a 2nd tab: <title>Welcome to nginx!</title>
-kubectl get events --sort-by=.lastTimestamp | tail -5   # newest: ScalingReplicaSet, SuccessfulCreate, Scheduled, Started
+kubectl port-forward svc/tour 8090:80        # Ctrl + C stops
+curl -s localhost:8090 | head -4             # in a 2nd tab: Welcome to nginx!
+kubectl get events --sort-by=.lastTimestamp | tail -5   # the newest events
 kubectl delete deployment tour               # clean up
 kubectl delete service tour
 ```
+**What each line does:**
+- `kubectl create deployment tour --image=nginx:1.27 --replicas=2`: a Deployment with 2 nginx Pods (`--image` = the image, `--replicas` = how many Pods); they get the label `app=tour` automatically.
+- `kubectl expose deployment tour --port=80`: a ClusterIP Service `tour` (a stable in-cluster IP + name in front of the Pods); `--port` = the port it listens on (and, with no `--target-port`, the Pods' port too).
+- `kubectl get pods -o wide`: `-o wide` adds the IP and NODE columns: `1/1 Running`, IP `10.244.0.x`, NODE `minikube`.
+- `kubectl get pods --show-labels`: adds a LABELS column: `app=tour,pod-template-hash=…` (the hash tells the Deployment's ReplicaSets apart).
+- `kubectl describe pod <one-tour-pod-name>`: the full details. Healthy = Events all `Normal`: `Scheduled`, `Pulled`, `Created`, `Started`.
+- `kubectl logs deploy/tour --tail=3`: `deploy/tour` = use one of the Deployment's Pods (it says `Found 2 pods, using pod/tour-…`); `--tail=3` = only the last 3 lines of nginx's start-up output.
+- `kubectl exec -it deploy/tour -- sh`: opens a shell inside one of the Pods (`-i` = interactive, `-t` = a terminal; `--` = the command to run inside follows). The prompt changes to `#`.
+- `curl -s localhost | head -4`: (inside) `-s` = silent (no progress bar); `| head -4` = the first 4 lines. The app answers inside its own Pod.
+- `cat /etc/resolv.conf`: (inside) the DNS settings Kubernetes gave the Pod; its `nameserver` is the cluster DNS.
+- `exit`: leaves the Pod.
+- `kubectl port-forward svc/tour 8090:80`: connects your Mac's port 8090 to the Service's port 80 and prints `Forwarding from 127.0.0.1:8090 -> 80`. It keeps the terminal busy; Ctrl + C stops it.
+- `curl -s localhost:8090 | head -4`: (in a 2nd tab) `<title>Welcome to nginx!</title>`: the app and Service work on their own.
+- `kubectl get events --sort-by=.lastTimestamp | tail -5`: all recent events in the namespace, sorted by time (`--sort-by` = the field to sort on), so the newest are at the bottom; `tail -5` keeps the last 5: `ScalingReplicaSet`, `SuccessfulCreate`, `Scheduled`, `Started`.
+- `kubectl delete deployment tour` + `kubectl delete service tour`: clean up.
 
 ### ✅ Check 66
 **66.1** A Pod has restarted 4 times. You want to see the **exit code and reason** of the container's last crash. Which command shows them?
@@ -181,18 +201,30 @@ The manifest is ready-made: `~/DevOPS/sessions/labs/10/practice/crash-demos.yaml
 - `crash-config` reads `DB_HOST` from a ConfigMap `crash-settings` that **doesn't exist yet**.
 ```bash
 kubectl apply -f ~/DevOPS/sessions/labs/10/practice/crash-demos.yaml
-kubectl get pods                                          # ~10 s: crash-config CreateContainerConfigError 0; crash-oom OOMKilled 1; crash-typo Error 1 (later: CrashLoopBackOff)
-kubectl describe pod crash-oom | grep -A 5 "Last State"   # -A 5 = 5 lines After: Terminated, Reason: OOMKilled, Exit Code: 137
+kubectl get pods                                          # three different failures
+kubectl describe pod crash-oom | grep -A 5 "Last State"   # OOMKilled, 137
 kubectl logs crash-typo                                   # sh: pyhton: not found
-kubectl describe pod crash-typo | grep -A 3 "Last State"  # Exit Code: 127 = command not found
-kubectl describe pod crash-config | tail -3               # Error: configmap "crash-settings" not found
-kubectl logs crash-config                                 # an error: the container was never created
+kubectl describe pod crash-typo | grep -A 3 "Last State"  # Exit Code: 127
+kubectl describe pod crash-config | tail -3               # configmap … not found
+kubectl logs crash-config                                 # an error: no container yet
 kubectl create configmap crash-settings --from-literal=db_host=postgres   # create the missing ConfigMap
-kubectl get pod crash-config                              # within ~10 s: 1/1 Running (the kubelet retried)
+kubectl get pod crash-config                              # 1/1 Running
 kubectl logs crash-config                                 # DB_HOST is postgres
 kubectl delete -f ~/DevOPS/sessions/labs/10/practice/crash-demos.yaml --now   # clean up
 kubectl delete configmap crash-settings
 ```
+**What each line does:**
+- `kubectl apply -f …/crash-demos.yaml`: creates the three Pods from the one file (`-f` = file).
+- `kubectl get pods`: after about 10 s: `crash-config` `CreateContainerConfigError` with RESTARTS 0; `crash-oom` `OOMKilled` with 1; `crash-typo` `Error` with 1 (later `CrashLoopBackOff`).
+- `kubectl describe pod crash-oom | grep -A 5 "Last State"`: finds the `Last State` line, and `-A 5` also prints the 5 lines After it: `Terminated`, `Reason: OOMKilled`, `Exit Code: 137`.
+- `kubectl logs crash-typo`: what the container printed: `sh: pyhton: not found`.
+- `kubectl describe pod crash-typo | grep -A 3 "Last State"`: `Exit Code: 127` = command not found.
+- `kubectl describe pod crash-config | tail -3`: `tail -3` = the last 3 lines (the newest Events): `Error: configmap "crash-settings" not found`.
+- `kubectl logs crash-config`: an error instead of logs: the container was never created.
+- `kubectl create configmap crash-settings --from-literal=db_host=postgres`: creates the missing ConfigMap (`--from-literal` = a key=value typed on the command line).
+- `kubectl get pod crash-config`: within about 10 s, `1/1 Running`: the kubelet retried by itself.
+- `kubectl logs crash-config`: `DB_HOST is postgres`.
+- `kubectl delete -f … --now` + `kubectl delete configmap crash-settings`: clean up everything the file created (`--now` = skip most of the grace period), then the ConfigMap.
 
 ### ✅ Check 67
 **67.1** `kubectl describe pod` shows `Last State: Terminated   Reason: OOMKilled   Exit Code: 137`. What happened?
@@ -255,18 +287,31 @@ The manifest is ready-made: `~/DevOPS/sessions/labs/10/practice/pull-pending.yam
 - `pending-pvc` mounts a PVC named `does-not-exist`.
 ```bash
 kubectl apply -f ~/DevOPS/sessions/labs/10/practice/pull-pending.yaml
-kubectl get pods -o wide                          # 2 × Pending with NODE/IP <none>; pull-typo ErrImagePull HAS a node and IP (only the pull failed)
-kubectl describe pod pull-typo | tail -4          # pull access denied, repository does not exist…: the name is misspelled
-kubectl logs pull-typo                            # … is waiting to start: image can't be pulled
-kubectl describe pod pending-selector | tail -2   # 0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector
-kubectl describe pod pending-pvc | tail -2        # 0/1 nodes are available: persistentvolumeclaim "does-not-exist" not found
-kubectl label node minikube disktype=ssd          # add the label: the scheduler retries and places the Pod
+kubectl get pods -o wide                          # 2 × Pending + 1 ErrImagePull
+kubectl describe pod pull-typo | tail -4          # pull access denied …
+kubectl logs pull-typo                            # waiting to start
+kubectl describe pod pending-selector | tail -2   # didn't match … selector
+kubectl describe pod pending-pvc | tail -2        # persistentvolumeclaim … not found
+kubectl label node minikube disktype=ssd          # add the label
 kubectl get pod pending-selector -o wide          # Running on minikube
-kubectl label node minikube disktype-             # key + minus = remove the label (a running Pod stays)
-kubectl describe node minikube | grep -A 6 "Allocated resources"   # cpu 1370m (22%) requests, 2700m (45%) limits…
+kubectl label node minikube disktype-             # remove the label
+kubectl describe node minikube | grep -A 6 "Allocated resources"   # what's reserved
 kubectl describe node minikube | grep Taints      # Taints: <none>
 kubectl delete -f ~/DevOPS/sessions/labs/10/practice/pull-pending.yaml   # clean up
 ```
+**What each line does:**
+- `kubectl apply -f …/pull-pending.yaml`: creates the three Pods.
+- `kubectl get pods -o wide`: the two `pending-…` Pods are `Pending` with NODE and IP `<none>` (never placed). `pull-typo` shows `ErrImagePull` but **has** a node and an IP: it was placed, and only the pull failed.
+- `kubectl describe pod pull-typo | tail -4`: the newest Events: `pull access denied, repository does not exist…`: here, the name is misspelt.
+- `kubectl logs pull-typo`: no logs, just `… is waiting to start: image can't be pulled`.
+- `kubectl describe pod pending-selector | tail -2`: `0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector`.
+- `kubectl describe pod pending-pvc | tail -2`: `0/1 nodes are available: persistentvolumeclaim "does-not-exist" not found`.
+- `kubectl label node minikube disktype=ssd`: adds the label `disktype=ssd` to the node; the scheduler retries and places `pending-selector`.
+- `kubectl get pod pending-selector -o wide`: `Running` on `minikube`.
+- `kubectl label node minikube disktype-`: the key followed by a minus removes the label (the Pod already running stays).
+- `kubectl describe node minikube | grep -A 6 "Allocated resources"`: that heading plus the 6 lines after it: what Pods have already **requested**, e.g. `cpu 1370m (22%)` requests, `2700m (45%)` limits.
+- `kubectl describe node minikube | grep Taints`: `Taints: <none>`: no "keep out" marks on your node.
+- `kubectl delete -f …/pull-pending.yaml`: clean up all three Pods.
 
 ### ✅ Check 68
 **68.1** Events: `Failed to pull image "acme/billing:2.1": … pull access denied, repository does not exist or may require authorization`. The name is spelled correctly, and the image exists in your company's **private** Docker Hub repository. What's the fix?
@@ -340,27 +385,46 @@ spec:
 ```
 ```bash
 kubectl apply -f bind-demo.yaml
-kubectl expose pod bind-demo --port=80 --target-port=8000         # a Service "bind-demo": port 80 → the Pod's port 8000
-kubectl run dns-test --image=busybox:1.28 --restart=Never -- sleep 3600   # client Pod; 1.28's nslookup prints clean answers
-kubectl describe svc bind-demo | grep -E "TargetPort|Endpoints"   # 8000/TCP and 10.244.0.x:8000: endpoints are FINE
-kubectl exec dns-test -- wget -qO- -T 3 http://bind-demo          # -T 3 = 3 s timeout → Connection refused
-kubectl exec bind-demo -- wget -qO- http://127.0.0.1:8000         # hello from the app: it works inside
-kubectl exec bind-demo -- netstat -tln                            # TCP listening sockets: 127.0.0.1:8000 LISTEN = the cause
+kubectl expose pod bind-demo --port=80 --target-port=8000         # Service: 80 → 8000
+kubectl run dns-test --image=busybox:1.28 --restart=Never -- sleep 3600   # a client Pod
+kubectl describe svc bind-demo | grep -E "TargetPort|Endpoints"   # endpoints are FINE
+kubectl exec dns-test -- wget -qO- -T 3 http://bind-demo          # Connection refused
+kubectl exec bind-demo -- wget -qO- http://127.0.0.1:8000         # works inside
+kubectl exec bind-demo -- netstat -tln                            # 127.0.0.1:8000 LISTEN
 ```
+**What each line does:**
+- `kubectl apply -f bind-demo.yaml`: creates the Pod.
+- `kubectl expose pod bind-demo --port=80 --target-port=8000`: a Service `bind-demo` for this one Pod. `--port` = the Service's port (80); `--target-port` = the Pod's port, where the app listens (8000).
+- `kubectl run dns-test --image=busybox:1.28 --restart=Never -- sleep 3600`: a client Pod that sleeps for an hour so you can run tests from it (`--restart=Never` = a plain Pod; `--` = the command follows). Version 1.28 because its `nslookup` prints clean answers.
+- `kubectl describe svc bind-demo | grep -E "TargetPort|Endpoints"`: keeps only those two lines (`grep -E "A|B"` = A or B): `8000/TCP` and `10.244.0.x:8000`. The endpoints are **fine**.
+- `kubectl exec dns-test -- wget -qO- -T 3 http://bind-demo`: fetches the Service from the client Pod (`-q` = quiet, `-O-` = print to the screen, `-T 3` = give up after 3 s). Result: `Connection refused`.
+- `kubectl exec bind-demo -- wget -qO- http://127.0.0.1:8000`: the same request **inside** the app's own Pod: `hello from the app`. It works there.
+- `kubectl exec bind-demo -- netstat -tln`: lists the listening sockets (`-t` = TCP, `-l` = listening only, `-n` = numbers, not names). `127.0.0.1:8000 LISTEN` is the cause: loopback only.
+
 **Fix:** in `bind-demo.yaml`, change `-p 127.0.0.1:8000` to **`-p 8000`** (all interfaces). A Pod's command can't be edited in place, so delete and re-apply:
 ```bash
 kubectl delete pod bind-demo --now
 kubectl apply -f bind-demo.yaml
-kubectl exec bind-demo -- netstat -tln                    # :::8000 = all interfaces (IPv6 form, covers IPv4 too)
+kubectl exec bind-demo -- netstat -tln                    # :::8000
 kubectl exec dns-test -- wget -qO- -T 3 http://bind-demo  # hello from the app
-kubectl exec dns-test -- nslookup bind-demo               # 10.105.x.x bind-demo.default.svc.cluster.local: the search domains made the FQDN
-kubectl exec dns-test -- nslookup kubernetes.default      # 10.96.0.1: the API server's own Service
-kubectl exec dns-test -- nslookup bind-demo-typo          # can't resolve 'bind-demo-typo': a DNS failure
+kubectl exec dns-test -- nslookup bind-demo               # the FQDN + ClusterIP
+kubectl exec dns-test -- nslookup kubernetes.default      # 10.96.0.1
+kubectl exec dns-test -- nslookup bind-demo-typo          # can't resolve
 kubectl get pods -n kube-system -l k8s-app=kube-dns       # coredns-… Running
-kubectl get svc -n kube-system kube-dns                   # 10.96.0.10, ports 53/UDP,53/TCP,9153/TCP (DNS mostly uses UDP)
+kubectl get svc -n kube-system kube-dns                   # 10.96.0.10
 kubectl delete pod bind-demo dns-test --now               # clean up
 kubectl delete service bind-demo
 ```
+**What each line does:**
+- `kubectl delete pod bind-demo --now` + `kubectl apply -f bind-demo.yaml`: replaces the Pod with the fixed one (`--now` = skip most of the grace period).
+- `kubectl exec bind-demo -- netstat -tln`: now `:::8000` = all interfaces (the IPv6 form, which covers IPv4 too).
+- `kubectl exec dns-test -- wget -qO- -T 3 http://bind-demo`: `hello from the app`: the Service works now.
+- `kubectl exec dns-test -- nslookup bind-demo`: asks DNS for the short name: `10.105.x.x bind-demo.default.svc.cluster.local`. The search domains turned it into the FQDN.
+- `kubectl exec dns-test -- nslookup kubernetes.default`: `10.96.0.1`, the API server's own Service: a quick "does DNS work at all?" test.
+- `kubectl exec dns-test -- nslookup bind-demo-typo`: `can't resolve 'bind-demo-typo'`: what a DNS failure looks like.
+- `kubectl get pods -n kube-system -l k8s-app=kube-dns`: the CoreDNS Pods (`-n` = namespace, `-l` = label selector): `coredns-… Running`.
+- `kubectl get svc -n kube-system kube-dns`: the DNS Service: `10.96.0.10`, ports `53/UDP,53/TCP,9153/TCP` (DNS mostly uses UDP; 9153 = metrics).
+- `kubectl delete pod bind-demo dns-test --now` + `kubectl delete service bind-demo`: clean up.
 
 ### ✅ Check 69
 **69.1** Pods run with the label `app: web` (all `1/1 Running`). The Service has `selector: app: Web`. `kubectl describe svc` shows `Endpoints:` empty. Why?
@@ -397,6 +461,14 @@ kubectl delete -f ~/DevOPS/sessions/labs/10/                                # cl
 kubectl delete pod lab-client --now
 kubectl get all                                                             # only service/kubernetes should remain
 ```
+**What each line does:**
+- `kubectl run lab-client --image=busybox:1.28 --restart=Never -- sleep 3600`: a client Pod that sleeps for an hour, so you can test the Services from inside the cluster.
+- `kubectl get pods`: step 1 of the method: read each lab Pod's STATUS and RESTARTS to decide which tool to use next.
+- `kubectl exec lab-client -- wget -qO- -T 3 http://lab-shop-svc` / `…/lab-api-svc`: request lab-4's and lab-5's Services by name from the client Pod (3-second limit). The error words (`bad address`, `Connection refused`, timeout) tell you which layer fails.
+- `kubectl delete -f ~/DevOPS/sessions/labs/10/`: when you're done: `-f` with a **folder** deletes everything defined in the YAML files directly inside it (the `practice` subfolder isn't touched).
+- `kubectl delete pod lab-client --now`: removes the client Pod.
+- `kubectl get all`: checks the cleanup: only `service/kubernetes` should remain.
+
 **Hints (only if stuck 5+ min):**
 - Status flips between two "pull" words → read the `Failed` event's last few words.
 - `Error` / `CrashLoopBackOff` → what did the dead container print? What can a container have besides `command`?
