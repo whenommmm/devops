@@ -24,10 +24,7 @@
 | B4 | Docker III: volumes vs bind mounts, networks & container-to-container, YAML, Compose | UNDERSTOOD (sub-items WEAK: container addressing; where volumes live) | Checks 5.5/8; quiz 4.5/6 (~71%) | Oct 14 | Oct 15 warm-up |
 | B5 | K8s I: why K8s, architecture (API server, etcd, scheduler, controller manager, kubelet, kube-proxy, runtime), apply flow, kubectl/manifests/namespaces | UNDERSTOOD (concepts) · WEAK: apiVersion groups, kubelet-local restarts, namespaces, writing commands | Set 1: checks 9/12, quiz 3/6 · Set 2: warm-up 3/3, checks 8.5/12, quiz 2.5/6 | Oct 15 | Oct 16 warm-up |
 | B5 | K8s II: Pods, phases, restartPolicy, labels/selectors, ReplicaSets, Deployments, rolling updates, rollback | UNDERSTOOD (concepts) · WEAK: selector logic (!=, matchLabels AND), rollout maths in scenarios | Checks 8.5/11; quiz MCQs 1/4 (L1/L2/C-tasks pending) | Oct 16 | Oct 17 warm-up |
-| B5 | Pod networking & Pod-to-Pod communication | NOT STARTED | – | – | – |
-| B5 | Services: ClusterIP / NodePort / LoadBalancer | NOT STARTED | – | – | – |
-| B5 | Ports: port / targetPort / nodePort / containerPort | NOT STARTED | – | – | – |
-| B5 | kube-proxy, CoreDNS, service discovery | NOT STARTED | – | – | – |
+| B5 | K8s III: Pod networking (flat, CNI), Services (ClusterIP/NodePort/LoadBalancer/headless), selectors & endpoints, port vs targetPort, DNS & service discovery, kube-proxy | UNDERSTOOD (checks strong; quiz scenarios weak) | Warm-up 3/3 · checks 9.5/12 · quiz MCQs 1/4 · L 1.5/2 · C 2/4 | Oct 16 | Oct 17 warm-up |
 | B5 | Ingress: controller, host/path routing, TLS | NOT STARTED | – | – | – |
 | B6 | ConfigMaps (env + volume) | NOT STARTED | – | – | – |
 | B6 | Secrets (env + volume, base64) | NOT STARTED | – | – | – |
@@ -89,7 +86,12 @@
 | **Protocols: HTTP/HTTPS/SSH run over TCP; DNS mostly UDP (port 53)** | Oct 6 | 1 (Net quiz Q4, hedged B/D) | Oct 13 warm-up | 1 (Git W3 ✓, Oct 11) |
 | A PR tracks a branch: push new commits to the same branch to address review comments | Oct 11 | 1 (Git Q3, hedged A/D) | Oct 12 warm-up | 0 |
 | Resolving a conflict: edit + remove markers → `git add` (marks resolved) → `git commit` | Oct 11 | 1 (L2 ½, missed add/commit) | Oct 12 warm-up | 0 |
-| 127.0.0.1 = same machine only; listen on 0.0.0.0 to accept outside connections; no DNS is involved when you use an IP directly | Oct 6 | 2 (26.3 ½, Net quiz Q2) | Oct 13 warm-up | 1 (Docker W2 ✓, Oct 11) |
+| **127.0.0.1 = same machine only; listen on 0.0.0.0 to accept outside connections** (in K8s: an app on 127.0.0.1 = only its own Pod, even with endpoints listed) | Oct 6 | **3** (26.3 ½, Net quiz Q2, K8s III Q1) | Oct 17 warm-up | 0 |
+| Short DNS names resolve in the Pod's OWN namespace; other namespaces need `svc.namespace` | Oct 16 | 1 (57.1 guess) | Oct 17 warm-up | 0 |
+| minikube (docker driver) node IP isn't reachable from the Mac → use port-forward / `minikube service --url`; tunnel is for LoadBalancer/Ingress | Oct 16 | 1 (55.2) | Oct 18 | 0 |
+| Headless Service (clusterIP: None): no virtual IP, kube-proxy writes no rules, DNS returns Pod IPs | Oct 16 | 1 (Q4) | Oct 18 | 0 |
+| FQDN = Fully Qualified Domain Name; format `<svc>.<ns>.svc.cluster.local` | Oct 16 | 1 (L2 ½) | Oct 17 warm-up | 0 |
+| Commands: `kubectl port-forward svc/<name> <mac>:<svc>` and `kubectl exec <pod> -- <cmd>` | Oct 16 | 2 (C1, C4 idk) | Oct 17 warm-up | 0 |
 | Private ranges: 10.x, 172.16–172.31.x, 192.168.x (193.168 is public!) | Oct 6 | 1 (26.1) | Oct 8 warm-up | 0 |
 | Full forms: TCP = Transmission **Control** Protocol, TLS = Transport Layer Security | Oct 6 | 1 (Net quiz L1) | Oct 7 warm-up | 0 |
 | Certificate check: signed by a trusted CA, right domain name, not expired → else "connection not private" | Oct 6 | 1 (L2 skipped) | Oct 7 warm-up | 0 |
@@ -200,6 +202,7 @@
 | Oct 5 | Shell I quiz (hard) | 4.5/9 (50%) | Q3 args-with-quotes ✓ | Q2 ✗ `$A_old` · Q4 idk (unquoted var splits) · Q6 ✗ outer quotes · L1 ✗ `$(...)` vs `${...}` · L2 ½ |
 | Oct 7 (calendar) | Shell II warm-up | 2/3 | – | W1 ✗ outer quotes · W2 ✓ · W3 ✓ (Block 1 test Q4 done) |
 | Oct 7 (calendar) | Shell II checks | 11.5/12 | check.sh predictions 4/4 · set -e fix verified on disk | 22.3 ½ (unquoted $1) |
+| "Oct 16" | K8s III (answered in chat) | Warm-up 3/3 · checks 9.5/12 · quiz 1/4 · L1 ✓ L2 ½ · C 2/4 | 55.3, 57.3, L1 full marks; C2, C3 ✓ | 55.2 ✗ hedged · 57.1 ✗ guess · Q1 ✗ 127.0.0.1 · Q3 unanswered · Q4 ✗ headless · C1/C4 idk |
 | "Oct 16" | K8s II (answered in chat) | Warm-up 2/3 · checks 8.5/11 · quiz MCQs 1/4 | 53.1–53.3 rollout ✓, 50.x phases ✓ | W3 ✗ umask · 51.1 ✗ != · 51.2 ✗ selector mismatch · 51.3 ½ · Q2 ✗ AND · Q3 ✗ rollout maths · Q4 ✗ apply · L1 ✓ (add why) · L2 ½ (results, not settings) · C1–C3 ✓, C4 skipped |
 | "Oct 15" | K8s I set 2 (new questions) | Warm-up 3/3 · checks 8.5/12 · quiz 2.5/6 | Q2 (Pod image mutable) ✓, L2 journey ✓ | 47.3 ✗ quorum · 49.2 ✗ + Q4 ✗ apiVersion · 49.3 idk (command) · Q1 ✗ kubelet · Q3 ✗ namespaces · L1 ½ |
 | "Oct 15" | K8s I (answered in chat) | Warm-up 1/3 · checks 9/12 · quiz 3/6 | Q3 (scheduler, hard) ✓, 48.1 ✓ | W1 ✗ quotes · W2 ✗ image vs service name · 46.1 ✗ hedged · 48.2 ✗ order · 47.3 skipped · Q1 ✗ · Q4 ✗ immutability |

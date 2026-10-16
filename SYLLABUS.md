@@ -14,8 +14,8 @@ Legend: ✅ covered · 🟡 in progress / partly covered · ⬜ not yet · 📅 
 | 7 | Docker Images & Dockerfile | Dockerfile · FROM, RUN, COPY · WORKDIR, ENV, EXPOSE · CMD vs ENTRYPOINT · .dockerignore · Multi-stage Builds · Image Optimization | ✅ covered (Oct 12) | Oct 7 S2 |
 | 8 | Docker Networking, Volumes & Compose | Docker Networking · Container-to-Container Communication · Port Mapping · Docker Volumes · Bind Mounts · Docker Compose · Multi-container Application | ✅ covered (Oct 14) | Oct 8 S1 |
 | 9 | Kubernetes Fundamentals | Why Kubernetes? · Kubernetes Architecture · Control Plane & Worker Nodes · API Server · Scheduler · Controller Manager · etcd · kubelet · kubectl | ✅ covered (Oct 15) | Oct 9 S1 |
-| 10 | Pods, ReplicaSets & Deployments | Pods · Pod Lifecycle · Labels & Selectors · ReplicaSets · Deployments · Scaling · Rolling Updates · Rollbacks | ⬜ | Oct 9 S2 |
-| 11 | Kubernetes Networking & Services | Pod Networking · Kubernetes DNS · Service Discovery · ClusterIP · NodePort · LoadBalancer · Service Selectors · port vs targetPort | ⬜ | Oct 10 S1 |
+| 10 | Pods, ReplicaSets & Deployments | Pods · Pod Lifecycle · Labels & Selectors · ReplicaSets · Deployments · Scaling · Rolling Updates · Rollbacks | ✅ covered (Oct 16) | Oct 9 S2 |
+| 11 | Kubernetes Networking & Services | Pod Networking · Kubernetes DNS · Service Discovery · ClusterIP · NodePort · LoadBalancer · Service Selectors · port vs targetPort | ✅ covered (Oct 16) | Oct 10 S1 |
 | 12 | Ingress, ConfigMaps & Secrets | Ingress · Ingress Controller · Host & Path-based Routing · TLS · ConfigMaps · Secrets · Environment Variables | ⬜ | Oct 10 S2 |
 | 13 | Storage, HPA & Probes | Volumes · PersistentVolume · PersistentVolumeClaim · StorageClass · HPA · Metrics Server · Liveness Probe · Readiness Probe · Startup Probe | ⬜ | Oct 11 S1 + S2 |
 | 14 | Kubernetes troubleshooting (K8s 6–8) | kubectl get · kubectl describe · kubectl logs · kubectl exec · Events · CrashLoopBackOff · ImagePullBackOff · Pending Pods · Service & DNS Troubleshooting | ⬜ | Oct 11 S2 + Oct 12 S1 |
