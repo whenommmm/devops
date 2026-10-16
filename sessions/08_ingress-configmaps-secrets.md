@@ -5,11 +5,11 @@
 **Before you start:**
 ```bash
 minikube status                       # everything Running (if not: minikube start)
-kubectl get deploy,svc                # Session 07 leftovers? kubectl delete deployment web; kubectl delete svc web web-np web-demo
-minikube addons list | grep ingress   # is the Ingress add-on switched on? (Concept 58)
+kubectl get deploy,svc                # old web practice objects left? kubectl delete deployment web; kubectl delete svc web web-np web-demo
+minikube addons list | grep ingress   # is the Ingress add-on (the NGINX Ingress controller) switched on?
 mkdir -p ~/devops-practice/k8s-ingress-config && cd ~/devops-practice/k8s-ingress-config
 ```
-> ⚠️ Never delete the `minikube` or `localstack` containers, and don't delete anything in the `ingress-nginx`, `kube-system`, `argocd` or `final-app` namespaces. If `kubectl get ingress -A` shows Ingresses elsewhere, leave them alone. Work only in `default`. (Delete Session 07's leftovers because this session reuses the names `web` and `api`.)
+> ⚠️ Never delete the `minikube` or `localstack` containers, and don't delete anything in the `ingress-nginx`, `kube-system`, `argocd` or `final-app` namespaces. If `kubectl get ingress -A` shows Ingresses elsewhere, leave them alone. Work only in `default`. (Delete those leftovers because this session reuses the names `web` and `api`.)
 
 ## 🔁 Warm-up
 **W1.** A Service `api` in the namespace `shop` has `type: ClusterIP`, `port: 80`, and `targetPort: 8080`. A Pod in the namespace `web` wants to call it. Which URL works?
@@ -35,9 +35,9 @@ mkdir -p ~/devops-practice/k8s-ingress-config && cd ~/devops-practice/k8s-ingres
 **Words you'll learn:** Ingress resource, Ingress controller, `ingress-nginx`, reverse proxy, OSI model (Open Systems Interconnection), Layer 4 (L4) vs Layer 7 (L7), IngressClass, `ingressClassName`, minikube addon, Host header, virtual hosting, `X-Forwarded-For`, echo server.
 
 ### The problem, and the idea
-Riya's website (`web`), API (`api`) and admin panel (`admin`) must be reachable from the internet. With Session 07's tools, each would be a **LoadBalancer** Service. In a cloud that means **3 load balancers** (3 public IPs, **3 monthly bills**), **3 places** to renew HTTPS certificates, and **no way** to send `shop.example.com/api/…` to the API, because a LoadBalancer only sees IP addresses and ports, never URLs.
+Riya's website (`web`), API (`api`) and admin panel (`admin`) must be reachable from the internet. Using Services alone, each would be a **LoadBalancer** Service (one that asks the cloud for its own load balancer and public IP). In a cloud that means **3 load balancers** (3 public IPs, **3 monthly bills**), **3 places** to renew HTTPS certificates, and **no way** to send `shop.example.com/api/…` to the API, because a LoadBalancer only sees IP addresses and ports, never URLs.
 
-A **reverse proxy** (networking session) is a server that sits in front of other servers, receives every request, and forwards each one to the right server. Kubernetes' version is **Ingress** (*ingress* means "the way in"; its opposite, *egress*, means "the way out"):
+A **reverse proxy** is a server that sits in front of other servers, receives every request, and forwards each one to the right server. Kubernetes' version is **Ingress** (*ingress* means "the way in"; its opposite, *egress*, means "the way out"):
 
 > **Ingress** lets **one entry point** receive all the HTTP/HTTPS traffic for a cluster and **route each request to the right Service**, based on the **host name** and the **URL path**.
 
@@ -62,7 +62,7 @@ The **OSI model** (**Open Systems Interconnection**) describes networking as 7 s
 | | **Service** (kube-proxy) | **Ingress** (controller) |
 |---|---|---|
 | Works at · routes by | L4 · IP address and port only | L7 · host name and URL path |
-| HTTPS | Passes it through untouched | Can decrypt it ("terminate" TLS, Concept 59) |
+| HTTPS | Passes it through untouched | Can decrypt it ("terminate" TLS: the encrypted connection ends here) |
 | Works for | Any TCP/UDP app (databases, DNS…) | Web traffic only |
 
 ⚠️ **Ingress doesn't replace Services.** Every Ingress rule points at a **Service**, and the controller uses that Service's endpoints to find the Pods.
@@ -70,7 +70,7 @@ The **OSI model** (**Open Systems Interconnection**) describes networking as 7 s
 ### IngressClass, the Host header, and your minikube
 - **IngressClass:** a cluster can run more than one controller, and an **IngressClass** is a small object that names one. On your cluster, the class **`nginx`** belongs to the controller `k8s.io/ingress-nginx`, and **`spec.ingressClassName: nginx`** in an Ingress says "this one is for NGINX". One class can be the **default** (it takes Ingresses with no class); with no default and no `ingressClassName`, **no controller picks your Ingress up**. **Always write `ingressClassName`.**
 - **Host header:** every HTTP request carries the name of the site the client wants (`Host: shop.example.com`), filled in by the browser from the URL. It lets **one IP address serve many websites** (**virtual hosting**), and it's exactly what the controller reads. Without real DNS, curl can set it: `curl -H "Host: shop.example.com" http://localhost:8080/` (`-H` = add or replace a header).
-- **On your minikube:** `minikube addons enable ingress` installs the NGINX controller into the namespace `ingress-nginx` (an **addon** = an optional extra that minikube installs for you). As with NodePorts in Session 07, the node lives inside Colima's VM, so this session **port-forwards to the controller** and uses `curl -H "Host: …"`. *(Untested alternative: `minikube tunnel`, which asks for your Mac password since ports 80/443 are privileged, then `curl -H "Host: shop.example.com" http://127.0.0.1/`.)*
+- **On your minikube:** `minikube addons enable ingress` installs the NGINX controller into the namespace `ingress-nginx` (an **addon** = an optional extra that minikube installs for you). As with NodePorts, the node lives inside Colima's VM (your Mac has no route to it), so this session **port-forwards to the controller** and uses `curl -H "Host: …"`. *(Untested alternative: `minikube tunnel`, which asks for your Mac password since ports 80/443 are privileged, then `curl -H "Host: shop.example.com" http://127.0.0.1/`.)*
 
 ### 🛠 Do (~15 min)
 **`kicbase/echo-server`** is a tiny web server that replies with **which Pod answered** and **the exact request it received**: perfect for seeing where the Ingress sent you.
@@ -88,7 +88,7 @@ kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80   # i
 curl -H "Host: shop.example.com" http://localhost:8080/   # Request served by web-… · X-Forwarded-For: 127.0.0.1
 curl -i http://localhost:8080/        # -i = show headers. Host "localhost" matches no rule → HTTP/1.1 404 Not Found
 ```
-*The `X-Forwarded-…` headers were added by the controller: reverse proxies add them so the app can still learn the original client and host. The 404 page comes from the controller itself. Leave the port-forward running for Concept 59.*
+*The `X-Forwarded-…` headers were added by the controller: reverse proxies add them so the app can still learn the original client and host. The 404 page comes from the controller itself. Leave the port-forward running for the routing and TLS steps below.*
 
 ### ✅ Check 58
 **58.1** On a fresh cluster, an engineer applies a valid Ingress. `kubectl get ingress` shows no ADDRESS, and requests to the nodes time out. The Pods and Services work fine. What's the most likely cause?
@@ -171,7 +171,7 @@ spec:
 ```
 
 ### TLS termination
-**HTTPS** is HTTP inside **TLS** encryption (networking session): the server proves who it is with a **certificate**, signed by a **CA** (**Certificate Authority**, an organisation browsers trust), and keeps a matching **private key** secret. **TLS termination** means **the place where the encrypted connection ends** (gets decrypted). With Ingress, the **controller** holds the certificate and key: it decrypts each request, reads the host and path (possible only **after** decrypting), and forwards plain HTTP to the Pods.
+**HTTPS** is HTTP inside **TLS** encryption: the server proves who it is with a **certificate**, signed by a **CA** (**Certificate Authority**, an organisation browsers trust), and keeps a matching **private key** secret. **TLS termination** means **the place where the encrypted connection ends** (gets decrypted). With Ingress, the **controller** holds the certificate and key: it decrypts each request, reads the host and path (possible only **after** decrypting), and forwards plain HTTP to the Pods.
 ```
  Browser ══ HTTPS (encrypted) ══► Ingress controller (holds cert + key; decrypts here) ── plain HTTP ──► Service ──► Pods
 ```
@@ -191,7 +191,7 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 365 -keyout tls.key -out tls.crt
 ```bash
 kubectl create secret tls shop-tls --cert=tls.crt --key=tls.key   # secret/shop-tls created
 kubectl get secret shop-tls           # TYPE kubernetes.io/tls, DATA 2
-kubectl describe secret shop-tls      # tls.crt: 1168 bytes, tls.key: 1704 bytes (sizes only; Concept 61 explains why)
+kubectl describe secret shop-tls      # tls.crt: 1168 bytes, tls.key: 1704 bytes (sizes only: describe never prints a Secret's values)
 code ingress.yaml                     # replace everything with the worked example above, then save
 kubectl apply -f ingress.yaml         # ingress.networking.k8s.io/shop configured (= updated)
 kubectl get ingress shop              # HOSTS shop.example.com,api.example.com · PORTS 80, 443
@@ -358,7 +358,7 @@ Secrets use base64 only so that **binary** data (keys, certificates) fits into a
 | Type | Holds | Created with | Used for |
 |---|---|---|---|
 | **`Opaque`** (the default) | Any key–value pairs | `kubectl create secret generic` | Passwords, API tokens |
-| **`kubernetes.io/tls`** | Exactly `tls.crt` + `tls.key` | `kubectl create secret tls` | Ingress TLS (Concept 59) |
+| **`kubernetes.io/tls`** | Exactly `tls.crt` + `tls.key` | `kubectl create secret tls` | Ingress TLS (the controller's HTTPS certificate) |
 | **`kubernetes.io/dockerconfigjson`** | A registry login | `kubectl create secret docker-registry` | Pulling **private images**: list it under the Pod spec's `imagePullSecrets:`, or the Pod gets `ImagePullBackOff` |
 
 `kubectl create secret` does the base64 for you. In **Secret YAML** there are two sections:
@@ -430,7 +430,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 kubectl delete pod cfg-demo app-pod
 kubectl delete configmap app-config app-files
 kubectl delete secret db-secret shop-tls
-kubectl delete ingress shop           # keep the ingress add-on: Kubernetes VI uses it
+kubectl delete ingress shop           # keep the ingress add-on: a later session uses it
 kubectl delete svc web api
 kubectl delete deployment web api
 rm tls.key

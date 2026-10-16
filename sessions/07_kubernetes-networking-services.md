@@ -164,7 +164,7 @@ wget -qO- http://web | head -4               # (inside) nginx's page by NAME; re
 wget -qO- http://10.97.95.169 | head -4      # (inside; YOUR ClusterIP) the same page by IP. Then: exit
 curl -m 5 http://10.97.95.169                # (on the Mac; -m 5 = give up after 5 s) Connection timed out: inside-only
 ```
-*`--port` = the port the Service listens on; `--target-port` = the port on the Pods (Concept 56). The CLUSTER-IP comes from a separate range (`10.96.0.0/12`), not the Pod range.*
+*`--port` = the port the Service listens on; `--target-port` = the port on the Pods, where the app really listens. The CLUSTER-IP comes from a separate range (`10.96.0.0/12`), not the Pod range.*
 ```bash
 kubectl expose deployment web --type=NodePort --port=80 --name=web-np
 kubectl get svc web-np                       # 80:31474/TCP = Service port : nodePort (it still has a CLUSTER-IP)
@@ -206,12 +206,12 @@ Which statement is correct?
 Riya's Service looks perfect and her Pods are `Running`, yet every request fails with **`Connection refused`**. Nothing is down: the **wiring** is wrong. Only two things connect a Service to its Pods: **labels** (which Pods) and **ports** (which door on them). These are favourite exam debugging questions.
 
 ### How a Service finds its Pods: Endpoints
-A Service's `spec.selector` is a set of labels. Kubernetes keeps looking for Pods that are in the **same namespace**, have **all** those labels (extra labels are fine), and are **Ready** (passing their readiness check, Session 09).
+A Service's `spec.selector` is a set of labels. Kubernetes keeps looking for Pods that are in the **same namespace**, have **all** those labels (extra labels are fine), and are **Ready** (passing their readiness check, a repeated test of whether the Pod can take traffic yet).
 
 The IP and port of every matching Pod go into a list called **Endpoints**, which kube-proxy turns into its rules. **Analogy:** the switchboard's list of agents **on shift right now**, updated within a second or two whenever a Pod dies or a new one becomes Ready. An **EndpointSlice** is the newer form of that list, split into slices so huge Services update efficiently; `kubectl get endpoints` still works but prints a deprecation warning.
 
 ⚠️ **Selector traps:**
-- A **Service** selector is plain `key: value` pairs, while a **Deployment** uses `matchLabels:` (Session 06):
+- A **Service** selector is plain `key: value` pairs, while a **Deployment** uses `matchLabels:`:
   ```yaml
   # Service                       # Deployment
   spec:                           spec:

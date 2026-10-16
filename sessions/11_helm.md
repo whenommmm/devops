@@ -2,7 +2,7 @@
 
 **Time:** ~90–100 min · **Concepts:** 70 → 73 · **Answers:** `MY_ANSWERS.md` or say "Helm questions" · **Answer key:** `11_helm_ANSWERS.md`
 
-**Before you start:** `minikube status` should show `Running` (if not, run `minikube start` and wait a minute or two), `kubectl get nodes` should show `minikube   Ready`, and `helm version` should show `Version:"v4.3.0"` (Concept 70 explains that line).
+**Before you start:** `minikube status` should show `Running` (if not, run `minikube start` and wait a minute or two), `kubectl get nodes` should show `minikube   Ready`, and `helm version` should show `Version:"v4.3.0"` (just one line, because Helm is only a client on your Mac; there is no Helm server).
 
 ⚠️ Never delete the **`minikube`** or **`localstack`** containers. Leave the namespaces you didn't create (`argocd`, `ingress-nginx`, `final-app`) alone: `helm list -A` may show a **`final-ticketdesk`** release in `final-app` from earlier work. Only remove what you create today.
 
@@ -38,10 +38,10 @@ What happens?
 Priya's team runs an online shop on Kubernetes. For **one app** they have 6 YAML files (Deployment, Service, ConfigMap, Secret, Ingress, HPA). They need **three environments** (dev, staging, prod) with slightly different settings: 1 replica in dev but 5 in prod, different image tags. So they copy the folder three times: **18 files, 90% identical**. Then the headaches start:
 - **Copy-paste drift:** someone fixes prod's `deployment.yaml` and forgets dev's copy, so the environments quietly differ.
 - **Upgrades are manual:** a new version means editing the tag in several files and running `kubectl apply -f` on each one.
-- **No "app version" to roll back:** `kubectl rollout undo` (Session 06) undoes **one Deployment**. If version 2 also changed the ConfigMap and the Ingress, no single command puts all of them back together.
+- **No "app version" to roll back:** `kubectl rollout undo` (which puts a Deployment back to its previous Pod template) undoes **one Deployment**. If version 2 also changed the ConfigMap and the Ingress, no single command puts all of them back together.
 
 ### The idea: a package manager for Kubernetes
-> **Helm is the package manager for Kubernetes.** Like `apt` or `brew` from the Linux session (one command installs software, keeps track of it, and later upgrades or removes it), one Helm command installs a whole app (all its Kubernetes objects together), upgrades it, rolls it back **as one unit**, or removes it: `helm install`, `helm upgrade`, `helm rollback`, `helm uninstall`. Helm is a **CNCF** (**Cloud Native Computing Foundation**) project, like Kubernetes itself.
+> **Helm is the package manager for Kubernetes.** Like `apt` on Ubuntu or `brew` on a Mac (one command installs software, keeps track of it, and later upgrades or removes it), one Helm command installs a whole app (all its Kubernetes objects together), upgrades it, rolls it back **as one unit**, or removes it: `helm install`, `helm upgrade`, `helm rollback`, `helm uninstall`. Helm is a **CNCF** (**Cloud Native Computing Foundation**) project, like Kubernetes itself.
 
 ### The four core words
 - **Chart** = **the package**: a folder of Kubernetes YAML files with **blanks** in them, plus a file of **default settings** that fill the blanks. One chart describes one app.
@@ -132,12 +132,12 @@ appVersion: "1.16.0"    # the version of the APP inside (nginx): informational o
 ### `values.yaml`: the default settings
 The list of **knobs** your chart offers (the important part of the generated file). Each knob is a setting you already know from the Kubernetes sessions: **a chart turns those settings into knobs**, so users change values instead of editing YAML.
 ```yaml
-replicaCount: 1          # how many Pods (Session 06)
+replicaCount: 1          # how many Pods (the Deployment's replicas)
 image:
   repository: nginx      # which image
   tag: ""                # empty, so the template uses the chart's appVersion instead
 service:
-  type: ClusterIP        # the Service type (Session 07)
+  type: ClusterIP        # the Service type (ClusterIP = reachable only inside the cluster)
   port: 80
 ingress:
   enabled: false         # the Ingress template produces nothing while this is false
@@ -182,7 +182,7 @@ helm lint mychart                         # check the chart without installing: 
 **Words you'll learn:** template, action (`{{ }}`), Go templating, built-in object, `.Values`, `.Release`, `.Chart`, pipeline (`|`), template function (`default`, `quote`, `upper`, `toYaml`, `nindent`, `required`), `if` / `range`, whitespace trimming (`{{-`), override, `-f` / `--values`, `--set`, precedence, per-environment values file, `helm template`.
 
 ### The idea: YAML with blanks
-Dev wants **1 replica** and image tag `dev`; prod wants **5 replicas** and tag `1.4.2`. Two copies of `deployment.yaml` that differ in two lines would bring back Concept 70's copy-paste drift. The fix is a **template**: a file with **blanks** that are filled in later. **Analogy: a mail-merge letter** ("Dear ________, …"): one design, and each person's name is filled in. In a Helm template, a blank looks like `replicas: {{ .Values.replicaCount }}`.
+Dev wants **1 replica** and image tag `dev`; prod wants **5 replicas** and tag `1.4.2`. Two copies of `deployment.yaml` that differ in two lines would bring back copy-paste drift (fix one copy, forget the other, and the environments quietly differ). The fix is a **template**: a file with **blanks** that are filled in later. **Analogy: a mail-merge letter** ("Dear ________, …"): one design, and each person's name is filled in. In a Helm template, a blank looks like `replicas: {{ .Values.replicaCount }}`.
 - Everything between `{{` and `}}` is an **action**: an instruction to Helm, not YAML.
 - **Rendering** replaces each action with a value: with `replicaCount: 3` in values.yaml, the line becomes `replicas: 3`.
 - This `{{ }}` style is called **Go templating**, because it comes from Go, the programming language Helm is written in.
@@ -219,7 +219,7 @@ spec:
   # … further down, inside the container:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
 ```
-- **`if … end`** renders the lines between **only when** the condition is true. Here `replicas` is left out when autoscaling is on, because the **HPA** (Horizontal Pod Autoscaler, Session 09) controls the count then. That's also why `ingress.yaml` produces nothing while `ingress.enabled: false`.
+- **`if … end`** renders the lines between **only when** the condition is true. Here `replicas` is left out when autoscaling is on, because the **HPA** (Horizontal Pod Autoscaler, which adds or removes Pods based on load) controls the count then. That's also why `ingress.yaml` produces nothing while `ingress.enabled: false`.
 - **`range`** is a loop over a list (like `for` in the shell), e.g. one Ingress rule per host.
 - The **dash** in `{{-` (or `-}}`) trims the spaces and newline on that side, so the output has no stray blank lines.
 
@@ -234,7 +234,7 @@ spec:
 ```
 - `--set` wins **even if you type it before `-f`**. Position matters only **between** `-f` files.
 - Merging is **key by key**: keys you don't mention keep their defaults. A file containing only `image.tag` changes the tag and leaves `image.repository` alone.
-- **One chart, many environments:** `helm install shop-dev ./mychart -f values-dev.yaml -n dev`, then the same chart with `-f values-prod.yaml -n prod`. Concept 70's 18 files become one chart plus two short values files that are easy to review in a PR.
+- **One chart, many environments:** `helm install shop-dev ./mychart -f values-dev.yaml -n dev`, then the same chart with `-f values-prod.yaml -n prod`. Priya's 18 near-identical files (6 YAMLs × 3 environments) become one chart plus two short values files that are easy to review in a PR.
 
 ### Checking without installing
 - **`helm template <name> <chart>`** renders the chart and **prints the YAML** on your screen. **Nothing is sent to the cluster.** Add `-s templates/deployment.yaml` (long form `--show-only`) to print only one file.
@@ -312,7 +312,7 @@ Each `helm upgrade` starts again from the **chart's values.yaml plus only the fl
 - Or add **`--reuse-values`**: start from the last release's values, then apply the new flags on top.
 
 ### ⚠️ Trap 2: "deployed" doesn't mean "working"
-By default Helm **sends the YAML and returns immediately**. It marks the revision `deployed` even if the new Pods then fail: an upgrade to a tag that doesn't exist still says `STATUS: deployed`, while one new Pod sits in `ImagePullBackOff`. The app keeps working only thanks to the **rolling update** (Session 06): Kubernetes keeps the old Pods until the new ones are Ready.
+By default Helm **sends the YAML and returns immediately**. It marks the revision `deployed` even if the new Pods then fail: an upgrade to a tag that doesn't exist still says `STATUS: deployed`, while one new Pod sits in `ImagePullBackOff`. The app keeps working only thanks to the **rolling update** (Pods are replaced a few at a time, not all at once): Kubernetes keeps the old Pods until the new ones are Ready.
 - **`--wait`** (with `--timeout 2m`) makes Helm **wait until the Pods are Ready**. If they aren't Ready in time, the revision is marked **`failed`** and the command exits with a **non-zero exit code**, so a pipeline goes red (next session).
 - **`--rollback-on-failure`** (called `--atomic` in Helm 3) = if the upgrade fails, roll back automatically.
 

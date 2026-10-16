@@ -295,7 +295,7 @@ Run steps 2 and 5–8 plus the rollback on your minikube, using the files in `~/
 | **Manual approval for prod** | GitHub **Environments** with required reviewers pause a job until someone approves. That's **Continuous Delivery** (prod needs a human click); with no approval it's **Continuous Deployment** |
 | `kubectl port-forward` / `minikube tunnel` / `minikube service --url` | Three ways to reach a Service from your Mac when minikube uses the docker driver |
 | `kubectl top pods` / `kubectl top nodes` | Live CPU/memory, from **Metrics Server** (same data the HPA uses) |
-| **DORA metrics** (**DORA** = DevOps Research and Assessment) | **Deployment frequency**, **lead time for changes**, **change failure rate**, **time to restore service** (MTTR, Mean Time To Restore). The pipeline in Concept 90 improves all four |
+| **DORA metrics** (**DORA** = DevOps Research and Assessment) | **Deployment frequency**, **lead time for changes**, **change failure rate**, **time to restore service** (MTTR, Mean Time To Restore). The automated commit → CI → registry → CD → monitoring pipeline improves all four |
 | **Blameless postmortem** / **runbook** | A write-up after an incident focused on causes and fixes, **not** on blaming people / a step-by-step guide for handling known problems |
 | **Smoke test** | A tiny check right after deploying ("does `/` return 200?") that catches broken releases fast |
 | **Pin actions** | `uses: actions/checkout@v4` trusts whatever the `v4` tag points to. Security-strict teams pin to a full commit SHA (`@8f4b7f8…`), because tags can be moved (the same tag-vs-digest idea as images) |

@@ -41,7 +41,7 @@ echo 'Deploying $APP to "prod"'
 **Words you'll learn:** ephemeral, volume, mount, `volumes`, `volumeMounts`, `mountPath`, `emptyDir`, sidecar, `hostPath`, `configMap`/`secret` volume, `readOnly`, tmpfs.
 
 ### The problem
-Files a container writes go into its **writable layer** (Session 04), which is **ephemeral** (short-lived): when a container crashes, the **kubelet** (the agent on each node) restarts it with a fresh, empty layer. **Story:** Asha's Pod has an `app` container that writes logs to `/var/log/app`, and a `shipper` container that should send them to a log server. But each container has its own filesystem, so `shipper` can't even see the files, and they vanish whenever `app` restarts.
+Files a container writes go into its **writable layer** (the thin read-write layer on top of the image's read-only layers), which is **ephemeral** (short-lived): when a container crashes, the **kubelet** (the agent on each node) restarts it with a fresh, empty layer. **Story:** Asha's Pod has an `app` container that writes logs to `/var/log/app`, and a `shipper` container that should send them to a log server. But each container has its own filesystem, so `shipper` can't even see the files, and they vanish whenever `app` restarts.
 
 ### The idea: a volume
 > A **volume** is **a folder that belongs to the Pod**, not to any one container. Each container can **mount** it (plug it in) at a folder path of its choice.
@@ -53,11 +53,11 @@ Files a container writes go into its **writable layer** (Session 04), which is *
 | **`emptyDir`** | An empty folder, created when the Pod starts | ✅ | ❌ deleted with the Pod |
 | **`hostPath`** | A folder on the **node's** own disk | ✅ | ✅ but only on **that node** |
 | **`configMap`** / **`secret`** | Each key of the object shown as a **file** | ✅ | (they're separate objects) |
-| **`persistentVolumeClaim`** | Real, lasting storage (Concept 63) | ✅ | ✅ until you delete the claim |
+| **`persistentVolumeClaim`** | Real, lasting storage, requested through a claim | ✅ | ✅ until you delete the claim |
 
 - **`emptyDir`** lives exactly as long as the Pod. It's scratch space, and the usual way to share files with a **sidecar**: a helper container running beside the main app in the same Pod (like `shipper`). With `medium: Memory` it lives in RAM (**tmpfs**, as in Docker): fast, but it counts against the memory limit.
 - **`hostPath` is risky:** a Pod recreated on another node sees *that* node's folder (different data), and `hostPath: /` would expose the node's own files. It only *seems* fine on minikube, which has a single node.
-- **`configMap` / `secret` volumes** (Session 08): **each key becomes a file, and the file's content is the value**. Keys `color=blue` and `mode=dev` mounted at `/etc/app` give the files `color` (containing `blue`) and `mode`. Secret files live in memory, already decoded from base64.
+- **`configMap` / `secret` volumes**: **each key becomes a file, and the file's content is the value**. Keys `color=blue` and `mode=dev` mounted at `/etc/app` give the files `color` (containing `blue`) and `mode`. Secret files live in memory, already decoded from base64.
 - **Updates:** change the ConfigMap, and the **mounted files update by themselves** within about a minute. **Environment variables don't**: they're read once, when the container starts.
 
 **How it's written: two halves, joined by a name.** **`volumes`** (at Pod level) says **what** storage the Pod has: a name plus a type. **`volumeMounts`** (inside each container) says **where** that container sees it: the volume's name plus a **`mountPath`**. ⚠️ **Exam trap:** the names must **match exactly**, or `kubectl apply` fails with `Not found: "config"`.
@@ -239,7 +239,7 @@ An app stuck in a **deadlock** (two parts of the program each waiting for the ot
 | Runs | All the time, after startup succeeds | All the time, after startup succeeds | Only at the start, until it succeeds once |
 | If not defined | Assumed alive | Ready as soon as the container starts | No slow-start protection |
 
-While a startup probe hasn't succeeded yet, **liveness and readiness are paused**. Recap (Session 07): a Service's **endpoints** are the Pod IPs it sends traffic to, and **only Ready Pods are on that list**.
+While a startup probe hasn't succeeded yet, **liveness and readiness are paused**. Remember: a Service's **endpoints** are the Pod IPs it sends traffic to, and **only Ready Pods are on that list**.
 
 ### How a probe checks, and how often
 
@@ -259,7 +259,7 @@ A fourth kind, `grpc`, is awareness only. ⚠️ An `exec` command must **exist 
 - An aggressive liveness probe on a slow-starting app kills it before it's up, again and again: a **restart loop** ending in `CrashLoopBackOff`. Fix: add a **startup probe**.
 - No readiness probe: traffic arrives too early, so users see errors on every rollout.
 - A liveness probe that checks the database: one database blip restarts **every** Pod at once. Put dependency checks in **readiness**; and remember readiness never restarts a stuck app (that's **liveness**).
-- Relying on Docker's **`HEALTHCHECK`** (Session 03): **Kubernetes ignores it**. Probes go in the Pod spec.
+- Relying on Docker's **`HEALTHCHECK`** (the Dockerfile line that makes Docker test a container's health): **Kubernetes ignores it**. Probes go in the Pod spec.
 
 ### 🛠 Do (~15 min): liveness restarts a container; readiness holds back traffic
 **Part A: liveness.** `code liveness-demo.yaml`, paste, save. The app deletes its "health file" after 30 s to fake a freeze:
@@ -287,7 +287,7 @@ kubectl describe pod liveness-demo        # after ~80 s: read the container sect
 kubectl delete pod liveness-demo --now    # clean up (--now skips most of the 30 s wait)
 ```
 - The watch tab shows `liveness-demo 1/1 Running 1 (1s ago) 78s`: RESTARTS 0 → 1, again every ~75 s, later `CrashLoopBackOff`. `describe` shows `Exit Code: 137` and the event `Liveness probe failed: cat: can't open '/tmp/healthy'`.
-- **Why ~75 s?** After three failed probes (35–45 s) the kubelet sends **SIGTERM**, the polite "please stop" signal. But `sh` running as PID 1 ignores it (Session 03), so Kubernetes waits out the **grace period** (the time between SIGTERM and the forced SIGKILL, **30 s by default**), and SIGKILL comes at ~75 s. **137 = 128 + 9**, and 9 is SIGKILL's number.
+- **Why ~75 s?** After three failed probes (35–45 s) the kubelet sends **SIGTERM**, the polite "please stop" signal. But `sh` running as PID 1 ignores it (Linux gives PID 1 no default SIGTERM handling), so Kubernetes waits out the **grace period** (the time between SIGTERM and the forced SIGKILL, **30 s by default**), and SIGKILL comes at ~75 s. **137 = 128 + 9**, and 9 is SIGKILL's number.
 
 **Part B: readiness.** `~/DevOPS/sessions/labs/09/ready-demo.yaml` holds an nginx Pod (label `app: ready-demo`) with a readinessProbe doing `httpGet` on `/ready`, port 80, every 5 s, plus a Service `ready-demo` selecting it. nginx has no `/ready` page, so it answers 404.
 ```bash
@@ -325,7 +325,7 @@ kubectl delete -f ~/DevOPS/sessions/labs/09/ready-demo.yaml   # deletes everythi
 **Words you'll learn:** horizontal/vertical scaling, autoscaling, HPA (Horizontal Pod Autoscaler), metric, Metrics Server, `kubectl top`, requests, limits, millicore (`m`), throttling, OOMKilled, utilization, `ceil`, minReplicas/maxReplicas, stabilization window, flapping, VPA (Vertical Pod Autoscaler), Cluster Autoscaler.
 
 ### The problem
-A midnight sale brings 10× the traffic. With `kubectl scale` (Session 06), someone must be awake to add Pods, and remember to remove them later. We want **autoscaling**: scaling that happens by itself. **Horizontal** scaling ("scale out") adds **more Pods**, like opening more counters; that's the **HPA**'s job. **Vertical** scaling ("scale up") makes **each Pod bigger**, like giving one cook a bigger stove; that's the **VPA** (the Pods are usually recreated).
+A midnight sale brings 10× the traffic. With `kubectl scale` (setting the replica count by hand), someone must be awake to add Pods, and remember to remove them later. We want **autoscaling**: scaling that happens by itself. **Horizontal** scaling ("scale out") adds **more Pods**, like opening more counters; that's the **HPA**'s job. **Vertical** scaling ("scale up") makes **each Pod bigger**, like giving one cook a bigger stove; that's the **VPA** (the Pods are usually recreated).
 
 ### First: resource requests and limits
 Each container can say how much CPU and memory it needs, under `resources:`:

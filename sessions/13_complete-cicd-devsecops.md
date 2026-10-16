@@ -6,8 +6,8 @@
 ```bash
 colima status                 # Docker must be running
 minikube status               # Kubernetes must be running (minikube start if it isn't)
-docker images hello-app       # your Flask image from Session 03 (missing? rebuild it below)
-cd ~/devops-practice/hello-app && docker build -t hello-app:1.0 .   # only if hello-app:1.0 is missing (files: Session 03, Concept 38)
+docker images hello-app       # your Flask "Hello from the … container!" image (missing? rebuild it below)
+cd ~/devops-practice/hello-app && docker build -t hello-app:1.0 .   # only if hello-app:1.0 is missing (needs app.py, requirements.txt and the Dockerfile you wrote there)
 ```
 ⚠️ **Never remove the `minikube` or `localstack` containers.** Text after `#` in commands is a note for you: don't type it (your zsh would pass it on as arguments), or run `setopt interactivecomments` first.
 
@@ -40,7 +40,7 @@ echo $?
 
 **Words you'll learn:** pipeline stage, container registry (recap), GHCR, Docker Hub, commit SHA, short SHA, semantic versioning (semver), `latest` (recap), traceability, immutable, digest, `GITHUB_TOKEN`, `permissions:`, `packages: write`, access token, `docker/login-action`, Buildx, `docker/build-push-action`, image naming rules.
 
-**The problem.** Your Session 12 pipeline **tests** the code, but production runs an **image**. In Riya's team, Arjun builds `shop:latest` **on his laptop** after the tests pass, and pushes it. When production breaks, nobody knows **which commit** is inside, whether his laptop had **uncommitted changes**, or which image ran **before** (`latest` was overwritten, so the old one is gone).
+**The problem.** Your GitHub Actions pipeline from last time (checkout, install, pytest) **tests** the code, but production runs an **image**. In Riya's team, Arjun builds `shop:latest` **on his laptop** after the tests pass, and pushes it. When production breaks, nobody knows **which commit** is inside, whether his laptop had **uncommitted changes**, or which image ran **before** (`latest` was overwritten, so the old one is gone).
 
 **The idea:** let the **pipeline** build the image, on a **clean runner**, from the **exact commit that passed the tests**, labelled with **that commit's ID**. Then it pushes the image to a **registry**, where Kubernetes pulls it from (a wrong name or tag there = `ImagePullBackOff`). Each named phase of the pipeline (test, build, scan, push, deploy) is a **pipeline stage**; if one fails, the stages after it don't run.
 
@@ -61,7 +61,7 @@ echo $?
 
 ⚠️ **Trap: `latest` and Kubernetes.** A Deployment says `image: hello-app:latest`. CI pushes a new `latest` and runs `kubectl apply`. The YAML text **didn't change**, so kubectl prints `deployment.apps/hello unchanged`, **no rollout starts**, and the old Pods keep running. A new SHA tag changes the Pod template, and a template change is what triggers a rolling update.
 ### Registries, and how the pipeline logs in
-A **container registry** is a server that stores images (Session 02). The course uses **GHCR** (**GitHub Container Registry**, `ghcr.io/OWNER/IMAGE:TAG`, next to your code); **Docker Hub** (`docker.io/USER/IMAGE:TAG`) is the default when a name has no registry in front. The pipeline must log in before it can push:
+A **container registry** is a server that stores images, which you `docker push` to and `docker pull` from. The course uses **GHCR** (**GitHub Container Registry**, `ghcr.io/OWNER/IMAGE:TAG`, next to your code); **Docker Hub** (`docker.io/USER/IMAGE:TAG`) is the default when a name has no registry in front. The pipeline must log in before it can push:
 - **GHCR:** for every run, GitHub creates a temporary password called **`GITHUB_TOKEN`** (written `${{ secrets.GITHUB_TOKEN }}`), valid only while the job runs. What it may do is set by the workflow's **`permissions:`** block, and pushing an image needs **`packages: write`** (GitHub calls images "packages"). On many repos the token is **read-only by default**, so without that line the push is **denied**.
 - **Docker Hub:** use an **access token**, a password-like key you create in Docker Hub's settings and can limit or **revoke** (cancel) at any time, so it's safer than your real password. Save it as a repository secret, e.g. `DOCKERHUB_TOKEN`.
 - **Ready-made actions:** `docker/login-action` runs `docker login`; `docker/build-push-action` builds, applies every tag you list, and pushes. (`docker/setup-buildx-action` prepares **Buildx**, Docker's newer builder with extras like caching: it changes **how** you build, not whether you may push.)
@@ -103,7 +103,7 @@ docker rmi hello-app:Feature_1                    # removes only that extra labe
 
 **The problem.** The image is in the registry, but someone still types `kubectl set image …` by hand. At midnight Arjun deploys the wrong tag into the wrong namespace, and nobody notices for an hour, because nobody checked whether the rollout worked. The last mile (registry → cluster) must be automated **and verified**.
 ### What a pipeline needs in order to deploy
-Every `kubectl` command is an HTTPS request to the cluster's **API server**, its front door (Kubernetes I). So the runner needs what your Mac has: the **tools** (`kubectl`/`helm`, already on `ubuntu-latest`), **credentials** (a kubeconfig, stored as a secret) and **a network path** to the API server's address.
+Every `kubectl` command is an HTTPS request to the cluster's **API server**, its front door (every tool and component talks to the cluster only through it). So the runner needs what your Mac has: the **tools** (`kubectl`/`helm`, already on `ubuntu-latest`), **credentials** (a kubeconfig, stored as a secret) and **a network path** to the API server's address.
 
 A **kubeconfig** (by default `~/.kube/config`) is the file `kubectl` reads to know where to connect and who you are. It lists **clusters** (each API server's address, plus the certificate used to trust it), **users** (the **cluster credentials**: a client certificate or a token that proves who you are) and **contexts** (which user talks to which cluster, in which default namespace).
 
@@ -116,7 +116,7 @@ A pipeline changes the running image in one of three ways:
 
 ⚠️ `kubectl set image` and `kubectl apply` only **submit** the change. They report success **immediately**, even if every new Pod is about to fail, so the pipeline would show a green ✅ over a broken deployment.
 
-The fix is **`kubectl rollout status deployment/hello --timeout=120s`**, which waits and watches the rollout. It ends with `deployment "hello" successfully rolled out` (**exit code 0**) or, if the rollout isn't done within `--timeout`, with `error: timed out waiting for the condition` (**exit code 1**). A non-zero exit code fails the step (shell scripting), so a broken rollout now turns the pipeline **red**. A later step with **`if: failure()`** (run this step only if an earlier one failed) can then undo it: `kubectl rollout undo deployment/hello`.
+The fix is **`kubectl rollout status deployment/hello --timeout=120s`**, which waits and watches the rollout. It ends with `deployment "hello" successfully rolled out` (**exit code 0**) or, if the rollout isn't done within `--timeout`, with `error: timed out waiting for the condition` (**exit code 1**). A non-zero exit code fails the step, so a broken rollout now turns the pipeline **red**. A later step with **`if: failure()`** (run this step only if an earlier one failed) can then undo it: `kubectl rollout undo deployment/hello`.
 ### Environments, approval, and Continuous Delivery vs Deployment
 An **environment** in GitHub Actions is a named deploy target such as `staging` or `production` (Settings → Environments). A job with `environment: production` can use secrets that belong **only** to that environment, and can have **required reviewers**: the job **pauses** ("Waiting for review") until a listed person clicks **Approve and deploy**. That's the difference between:
 - **Continuous Delivery:** every change that passes the pipeline is **ready** to release, but a **human approves** the production deploy.
@@ -128,7 +128,7 @@ Everything above is **push-based**: the CI runner **pushes** changes **into** th
 ### Why GitHub's runners can't reach your minikube
 Your kubeconfig says `server: https://127.0.0.1:32771`. `127.0.0.1` is **loopback** ("this machine"), so on a GitHub runner it means **the runner itself**, where nothing is listening: `connection refused`. And the cluster's real address (`192.168.49.2`) is a **private IP** inside Colima, behind your home router, which the internet can't reach. Ways around it:
 - a **self-hosted runner**: GitHub's runner program on your Mac. It connects **out** to GitHub to ask for jobs, so kubectl runs on your Mac (⚠️ private repos only: on a public one, a stranger's PR could run code on your machine)
-- a **cloud cluster** (Amazon EKS, Google GKE, Azure AKS), reachable but paid; or a throwaway **kind** (**K**ubernetes **in** **D**ocker) cluster on the runner, which only **tests** the manifests; or a **GitOps agent** inside minikube (Session 14)
+- a **cloud cluster** (Amazon EKS, Google GKE, Azure AKS), reachable but paid; or a throwaway **kind** (**K**ubernetes **in** **D**ocker) cluster on the runner, which only **tests** the manifests; or a **GitOps agent** inside minikube (like Argo CD, which pulls from Git, so nothing needs to reach in)
 
 In class: **GitHub Actions builds, scans and pushes to GHCR; deploying to local Kubernetes is practised by hand** (below).
 ### 🛠 Do (~10 min): rehearse a pipeline's deploy commands on minikube
@@ -206,7 +206,7 @@ SCA compares every package version (transitive ones too) with databases of known
 
 **IAST** (**Interactive** AST, awareness) puts a small agent **inside** the running app (adding watching code like this is called **instrumentation**), so it sees both the request and the exact code that handled it.
 ### Secret scanning and IaC scanning
-**Secret scanning** looks for **passwords, API keys and tokens** written into files or Git history. Tools like **gitleaks** and **TruffleHog** match known patterns (GitHub tokens start with `ghp_`, AWS keys with `AKIA`), and GitHub's **push protection** **blocks the `git push`** itself. Run a scanner as a **pre-commit hook** (Session 01: the hook exits 1, the commit is cancelled) **and** in CI, since hooks aren't shared when someone clones the repo.
+**Secret scanning** looks for **passwords, API keys and tokens** written into files or Git history. Tools like **gitleaks** and **TruffleHog** match known patterns (GitHub tokens start with `ghp_`, AWS keys with `AKIA`), and GitHub's **push protection** **blocks the `git push`** itself. Run a scanner as a **pre-commit hook** (a script Git runs before each commit: if it exits 1, the commit is cancelled) **and** in CI, since hooks aren't shared when someone clones the repo.
 
 **If a real secret leaks,** deleting it in a new commit is **not** enough: the old commit still has it, and bots scan public GitHub for keys within minutes. Treat it as **compromised**: **revoke/rotate it first** → remove it from code and history → check for misuse → keep the new one in a secret (an environment variable filled from a GitHub Actions secret), never in code.
 
@@ -224,11 +224,11 @@ SCA compares every package version (transitive ones too) with databases of known
 ### 🛠 Do (~10 min): run an SCA scan and a secret scan, both in containers
 Both tools run in throwaway containers (`--rm` = delete afterwards; `-v "$PWD":/src` = bind-mount this folder at `/src`; `-w /src` = start there). Ignore pip's warning about running as root.
 ```bash
-cd ~/devops-practice/hello-app && cat requirements.txt   # flask==3.0.3 (from Session 03)
+cd ~/devops-practice/hello-app && cat requirements.txt   # flask==3.0.3 (the version pinned when you first built the image)
 docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r requirements.txt"; echo "exit code: $?"   # flask 3.0.3  PYSEC-2026-2151  3.1.3 … exit code: 1
 sed -i '' 's/flask==3.0.3/flask==3.1.3/' requirements.txt   # the fix: bump to the fixed version (-i '' is the macOS form)
 docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r requirements.txt"; echo "exit code: $?"   # No known vulnerabilities found, exit code: 0
-docker build -t hello-app:2.0 .                                  # rebuild with the fixed Flask (Concept 81 scans it)
+docker build -t hello-app:2.0 .                                  # rebuild with the fixed Flask (Trivy scans it in the next section)
 mkdir -p ~/devops-practice/s13-secrets && cd ~/devops-practice/s13-secrets
 printf 'GITHUB_TOKEN = "ghp_4fT9xQ2mZ7LbV1nK8sR3wY6pD0cH5jE2aU9i"\n' > settings.py      # a FAKE token
 docker run --rm -v "$PWD":/scan ghcr.io/gitleaks/gitleaks:v8.30.1 dir -v /scan; echo "exit code: $?"   # RuleID: github-pat … leaks found: 1, exit code: 1
@@ -256,7 +256,7 @@ Both scanners **exit 1** when they find something, so in CI the step would **fai
 
 **The problem.** Riya's code passes SAST and SCA, but the image isn't just her code: `python:3.12-slim` contains a small Debian Linux with about 87 **OS packages** (libraries like `openssl`, tools like `bash`), plus Python and pip, and new CVEs are found in packages like these every week. **Clean source code does not mean a clean image**, so scan the thing you actually ship.
 ### Trivy: what it does
-**Trivy** (from Aqua Security) is a free scanner: `trivy image` scans images (`trivy fs` scans folders, `trivy config` IaC files). It unpacks the image's **layers** (Session 03), lists the installed **OS packages** and **language packages** (Python, Node, Java libraries), and compares each name + version with its **vulnerability database** (a big list of CVEs and the versions they affect, downloaded on the first run).
+**Trivy** (from Aqua Security) is a free scanner: `trivy image` scans images (`trivy fs` scans folders, `trivy config` IaC files). It unpacks the image's **layers** (the stacked read-only filesystem pieces, one per Dockerfile instruction), lists the installed **OS packages** and **language packages** (Python, Node, Java libraries), and compares each name + version with its **vulnerability database** (a big list of CVEs and the versions they affect, downloaded on the first run).
 
 Each row of the report shows **Library** · **Vulnerability** (the CVE ID) · **Severity** · **Status** · **Installed Version** · **Fixed Version**. The **Status** tells you whether you can act: **`fixed`** = a newer version of the package fixes it (upgrading or rebuilding helps); **`affected`** = no fix exists yet.
 
@@ -278,7 +278,7 @@ docker build ─► trivy image --severity HIGH,CRITICAL --exit-code 1 app:sha
                    exit 0 ─► push to GHCR ─► deploy
                    exit 1 ─► step ✗ → job ✗ → jobs that need it SKIPPED → red PR check → merge blocked
 ```
-- **Exit codes:** a step whose command exits non-zero **fails**. **`needs:`** (Session 12): a job that needs a failed job is **skipped**, so push and deploy never run.
+- **Exit codes:** a step whose command exits non-zero **fails**. **`needs:`** (makes one job wait for another): a job that needs a failed job is **skipped**, so push and deploy never run.
 - **Branch protection:** a rule on `main`, "Require status checks to pass before merging". The jobs you pick (e.g. `test`, `image`) become **required status checks**, and while one is red, the PR's merge button is disabled. Fix it **on the same branch** and push: the PR re-runs its checks (no new PR needed).
 - Any stage can gate (tests, SAST, SCA, secrets, build, image scan, push, rollout). HIGH/CRITICAL is a **classroom threshold**: each organisation sets its own policy.
 
