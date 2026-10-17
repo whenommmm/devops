@@ -92,6 +92,9 @@ wc -l a.txt b.txt                     # 2 a.txt, 1 b.txt
 - `mkdir -p data && echo "still fine"`: with `-p`, mkdir is happy when the folder already exists, so `still fine` prints: idempotent.
 - `echo hi >> a.txt; … echo hi > b.txt; …`: each is run twice; `>>` **appends** one more line to the end of the file every time, while `>` **replaces** the whole file every time.
 - `wc -l a.txt b.txt`: counts lines (`wc` = word count, `-l` = lines only): `2 a.txt` (not idempotent) and `1 b.txt` (idempotent), plus a total.
+
+**🧠 In simple words:** You made a practice folder, moved into it, and then tried to create a folder called `data` twice with plain `mkdir`. The first try worked, but the second failed with "File exists", so plain `mkdir` is not idempotent, a fancy word meaning "doing it many times gives the same result as doing it once". With the `-p` option, `mkdir` is happy when the folder already exists, so it printed "still fine", which makes it idempotent. Next you ran two kinds of write, each one twice: the double arrow `>>` added the word hi to the end of `a.txt` every time, while the single arrow `>` threw away `b.txt`'s old contents and wrote hi fresh every time. Counting the lines then showed 2 lines in `a.txt` but only 1 in `b.txt`, because appending piles up one more line on every run, while replacing always leaves the same single line. This is the same safety Terraform gives you: with one bucket written in its file, the first run creates it and every later run simply says "No changes". In short: an idempotent command is safe to run again, because repeating it never changes the end result.
+
 ### ✅ Check 86
 
 **86.1** Which command can be run three times in a row and leave **exactly the same result** as running it once?
@@ -154,6 +157,8 @@ output "file_path" {
   value = local_file.note.filename
 }
 ```
+
+**🧠 In simple words:** You made a new practice folder, opened an empty file called `main.tf` in VS Code, and pasted in your first Terraform configuration, which is a written description of what should exist. The top `terraform` block lists the two plugins (providers) Terraform must download from HashiCorp: `local`, which makes files on your Mac, and `random`, which makes random values, each with a version limit so a surprise major new version is never pulled in. The two `variable` blocks are inputs with default values, `greeting` set to Hello and `env` set to dev, which are used whenever nobody gives a different value. The `random_pet` resource asks for a random two-word name, and the `local_file` resource asks for a text file inside an `output` folder whose name is built by dropping the value of `env` into it (so `dev-note.txt`) and whose text joins your greeting and the pet name. Because the note's text uses the pet name, the pet name has to exist before the note can be written, and Terraform works out that order by itself. The two `output` blocks print the pet name and the file's path at the end of a run, like a receipt. Nothing has been built yet: you have only written the description down, and you will actually run it later in this session, once you learn the Terraform commands. In short: a Terraform file says what you want (which plugins, which inputs, what to create and what to print), not the steps to get there.
 
 ### The blocks, explained
 - **`terraform`**: settings for Terraform itself, mainly **which providers** to download, from where, and which versions.
@@ -242,7 +247,7 @@ A **backend** is **where Terraform stores the state**. The default **local backe
 | `terraform state rm ADDRESS` | Make Terraform **forget** a resource. The real thing is **not** deleted |
 | `terraform import ADDRESS ID` | **Adopt** something created by hand, so Terraform manages it from now on |
 
-### 🛠 Do: Practical A (pure local, ~15 min; uses Concept 87's `main.tf`)
+### 🛠 Do: Practical A (pure local, ~15 min; uses the `main.tf` from your first configuration above)
 ```bash
 cd ~/devops-practice/tf-local
 terraform init && terraform validate && terraform plan   # Plan: 2 to add
@@ -270,6 +275,9 @@ terraform destroy -var-file=prod.tfvars  # type yes
 - `rm output/prod-note.txt && terraform plan -var-file=prod.tfvars`: deletes the file by hand (drift); `plan` refreshes, notices it's gone, and says `local_file.note will be created`.
 - `terraform apply -auto-approve -var-file=prod.tfvars`: applies **without** asking for `yes` (`-auto-approve`, as in pipelines); the code wins and the file is back.
 - `terraform destroy -var-file=prod.tfvars`: type `yes`; deletes everything in the state in **reverse** dependency order: the file first, then the pet name.
+
+**🧠 In simple words:** You went back to the folder holding the `main.tf` you wrote earlier, the one that makes a random pet name and a note file, and ran three commands in a row: `init` downloaded the two plugins (providers) for local files and random values and wrote a lock file recording their exact versions, `validate` checked the code for mistakes, and `plan`, a dry run that changes nothing, promised to create 2 things. When you typed yes to `apply`, Terraform really created the pet name and the note file, and printing the file showed your greeting and the pet name inside it. Running `plan` again said "No changes" because everything already matched the code (idempotency again), `state list` read the state file, Terraform's notebook of what it has built, and showed those same two things, and `output -raw` printed just the pet name with nothing around it. A plan with a different greeting typed on the command line showed the note would be destroyed and made again, because the local-file plugin cannot edit a file in place, but it was only a plan, so nothing changed. You then wrote a small variables file (greeting Namaste, env prod) and applied it, so a new `prod-note.txt` took the place of `dev-note.txt`, and after that a Hola greeting set through a `TF_VAR_` environment variable changed nothing, because a variables file named on the command line is stronger than an environment variable. When you deleted the note by hand, `plan` noticed it was missing (drift, meaning reality no longer matches the code) and planned to create it again, and `apply -auto-approve` put it back without asking for yes, the way a pipeline would. Finally, `destroy` deleted everything recorded in the state in reverse order, the file first and then the pet name, because the file's text depends on the name. In short: you describe what you want, `plan` shows what will change, `apply` makes it happen, and Terraform keeps pulling reality back to match your code.
+
 ### ✅ Check 88
 
 **88.1** `terraform plan` shows `-/+ resource "aws_instance" "web"` with `ami = "ami-0aaa" -> "ami-0bbb" # forces replacement`. What will `apply` do to the server?
@@ -430,6 +438,8 @@ curl -s http://127.0.0.1:4566/practice-bucket             # the bucket exists
 - **The graph in action:** the VPC and the bucket are created **together** (neither references anything); everything else waits for the VPC. The output `azs` lists `us-east-1a` … `us-east-1f`, read by the data source.
 - **An in-place update:** add `Env = "dev"` to the VPC's `tags`, and `terraform plan` shows `~ update in-place`, `0 to add, 1 to change`: a tag can change on a live VPC, so nothing is replaced.
 - **Clean up:** `terraform destroy` (type yes; the VPC goes **last**), then `rm -rf .terraform` to free the ~770 MB.
+
+**🧠 In simple words:** You wrote a Terraform file that uses the real Amazon Web Services (AWS) plugin but points it at LocalStack, a pretend copy of Amazon's cloud running on your Mac, with fake keys, so nothing ever reached Amazon or cost money. The file describes a storage bucket and a small network: a VPC (Virtual Private Cloud, your own private network), one public subnet (a smaller slice of its addresses in a single Availability Zone), an internet gateway as the network's front door, a route table that sends all outside traffic through that door and is attached to the subnet (which is what makes the subnet public), and a security group, a firewall for servers, that lets web traffic in on port 80 from anyone and lets everything out. It also has a data source, which only looks up the list of available zones and creates nothing. Then `init` downloaded the big AWS plugin, `validate` said the code was fine, and `apply` showed 7 things to add (the data source is not counted because it builds nothing) and built them after you typed yes. The `curl` request asked LocalStack for the bucket by name, and the reply contained `practice-bucket`, proving Terraform really created it. The VPC and the bucket were built at the same time because neither refers to anything else, the other network pieces waited for the VPC because they refer to it, and the `azs` output listed the zones `us-east-1a` to `us-east-1f` that the data source looked up. When you added one more tag (`Env = "dev"`) to the VPC and ran `plan`, it showed an in-place update, 0 to add and 1 to change, because a tag is just a label and can be changed on a live network without rebuilding it. In short: one text file described a whole cloud network, and Terraform built it in the right order on a safe pretend cloud.
 
 **The server itself, on paper only** (LocalStack's free edition can't boot a real VM). In real AWS you'd add:
 ```hcl
