@@ -109,6 +109,8 @@ curl -i http://localhost:9080/        # 404 Not Found
 
 *Leave the port-forward running for the routing and TLS steps below.*
 
+**🧠 In simple words:** You checked that the "front door" program (the NGINX Ingress controller) is installed and running. Then you started two tiny test apps, `web` and `api`, which simply reply with their own Pod name, and gave each one a Service so it has a stable name inside the cluster. Next you wrote one routing rule (an Ingress) saying "requests for shop.example.com go to web". Your Mac can't reach minikube's network directly, so you opened a tunnel from your Mac's port 9080 to the controller. Finally you sent two requests through that tunnel: the one carrying the Host header `shop.example.com` matched the rule and was answered by a web Pod, while the one carrying `localhost` matched no rule, so the controller itself replied 404. In short: one front door reads the website name on every request and passes it to the right app.
+
 ### ✅ Check 58
 **58.1** On a fresh cluster, an engineer applies a valid Ingress. `kubectl get ingress` shows no ADDRESS, and requests to the nodes time out. The Pods and Services work fine. What's the most likely cause?
 - A) The backend Services must be type LoadBalancer
@@ -239,6 +241,8 @@ curl -kv --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443
 - `curl --resolve … https://shop.example.com:9443/` (no `-k`): curl checks the certificate and refuses: `curl: (60) SSL certificate problem: self signed certificate`.
 - `curl -kv … 2>&1 | grep "subject:"`: `-v` = verbose: prints the TLS details on stderr (the error output); `2>&1` sends stderr into the pipe too, so `grep` can filter it. `subject: CN=shop.example.com` proves the controller presented **your** certificate.
 
+**🧠 In simple words:** You made your own HTTPS certificate with `openssl`. It's "self-signed", meaning you vouched for yourself instead of a trusted company, which is fine for practice. You stored the certificate and its private key in a TLS Secret, then replaced the Ingress with the full version: two website names, a rule sending `/api` to the api app, and a `tls:` section pointing at that Secret. You restarted the tunnel with two ports (9080 for plain HTTP, 9443 for HTTPS) and tested the routing: `/api/orders` reached api, `/apix` reached web (because `apix` is a different word from `api`, not something below it), and `api.example.com` reached api. Plain HTTP was now answered with a 308 redirect to HTTPS, curl without `-k` refused the self-signed certificate, and `-v` proved the controller showed your own certificate. In short: the controller now handles the encryption for every app in one place, so the apps behind it never touch a certificate.
+
 ### ✅ Check 59
 **59.1** An Ingress has two rules for host `shop.example.com`: `/api` (Prefix) → `api`, and `/` (Prefix) → `web`. Where do these three requests go: `/api/v1/items`, `/apis`, `/`?
 - A) api, api, web
@@ -352,6 +356,8 @@ kubectl exec cfg-demo -- env | grep APP_COLOR                  # STILL blue
 - `kubectl exec cfg-demo -- env | grep APP_COLOR`: `blue`, and **still** `blue` a minute later.
 
 *The **file** updated by itself; the **env var** was fixed when the container started.*
+
+**🧠 In simple words:** You created two ConfigMaps, which are settings stored in the cluster instead of inside the image: `app-config` from values typed on the command line, and `app-files` from a whole file. You started a Pod that receives those settings in three ways: one key as a single environment variable, every key as environment variables, and every key as a small file in a folder. Using `kubectl exec` you looked inside the running container and found the same values both as variables and as files. Then you changed `APP_COLOR` from blue to green. The file version updated by itself after about a minute, but the environment variable stayed blue, because a container reads its environment variables only once, when it starts. In short: ConfigMaps let you change an app's settings without rebuilding its image, but settings given as environment variables need new Pods (`kubectl rollout restart`) before the app sees them.
 
 ### ✅ Check 60
 **60.1** A Deployment's Pods read `APP_MODE` through `envFrom` from the ConfigMap `app-config`. You change `APP_MODE` to `debug` and `kubectl apply` the ConfigMap. Ten minutes later, the app still sees `prod`. What's the reason, and the fix?
@@ -492,6 +498,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - `kubectl describe pod broken-pod | grep Warning`: keeps only the warning line: `… couldn't find key password in Secret default/db-secret`.
 - `kubectl delete pod broken-pod`: removes it.
 - `kubectl create secret docker-registry regcred … --dry-run=client -o yaml`: look only: prints a registry-login Secret (`--docker-server`/`--docker-username`/`--docker-password` = the registry and its login) of type `kubernetes.io/dockerconfigjson`, without creating it.
+
+**🧠 In simple words:** First you saw that base64 is just a different way of writing text, not a lock: anyone can turn `UzNjcjN0IQ==` back into `S3cr3t!` with `base64 -d`, no key needed, and a forgotten `-n` quietly adds a newline to the value. Then you stored a username and password in a Secret. `describe` showed only their sizes, but `-o yaml` and `jsonpath` showed the encoded values, which you decoded with one command. You gave the Secret to a Pod both as environment variables and as files, and the app saw the real, decoded password; those files live in memory (tmpfs), not on disk. Next you broke a copy of the Pod on purpose by asking for a key that doesn't exist, and saw `CreateContainerConfigError`, with the exact reason in `describe`. Finally you printed, without creating it, the special Secret Kubernetes uses to log in to a private image registry. In short: a Secret keeps passwords out of your images and YAML files, but it's only encoded, so real protection comes from limiting who can read Secrets (RBAC), encryption at rest, and external secret managers.
 
 **Clean up the whole session** (press Ctrl + C on any port-forward first):
 ```bash

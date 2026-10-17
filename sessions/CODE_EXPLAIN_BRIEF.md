@@ -17,3 +17,8 @@ RULES
 - Never change question/option lines (lines starting with **W, **Q, **L, **C, **M, **<digit>, or - A) to - D)), and don't touch _ANSWERS.md files.
 - No bare cross-references like "(Concept 57)"; explain in place instead.
 - When done with each file, count the code blocks you explained.
+
+## Plus: a big-picture paragraph after every 🛠 Do section (user, 2026-10-17)
+After the line-by-line list (and any italic note), at the end of each 🛠 Do section, add:
+
+**🧠 In simple words:** 5–8 full sentences of everyday English telling the whole story of the Do section in order: what you set up, what you did, what you saw, and WHY it happened. End with "In short: …", the single takeaway. Define any technical word in passing; no new commands, no shorthand, no bare cross-references. Session 08 holds the model paragraphs.

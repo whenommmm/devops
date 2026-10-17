@@ -75,3 +75,6 @@ You may run commands to check syntax or real output (e.g., `kubectl apply --dry-
 
 ## LENGTH CAP (user, 2026-10-15; strict)
 The user said sessions were far too long ("don't make it 500 lines long"). **Each session file must be at most ~330 lines** (target 280–330), i.e. roughly **50–70 lines per concept**. Keep every term defined (one line each), full forms, one analogy per concept, essential tables and diagrams, and the practical commands. Show only the 1–3 key lines of expected output. Cut repetition, long stories (2–3 sentences max), restated tables, and multiple analogies. "Small but important" is one table of at most ~15 rows.
+
+## Big-picture paragraph (user, 2026-10-17)
+Every 🛠 Do section ends with a **"🧠 In simple words:"** paragraph (5–8 plain sentences, the whole story of the practical and why it behaved that way, ending "In short: …"), placed after the "What each line does" list. See `CODE_EXPLAIN_BRIEF.md` and Session 08 for the model.
