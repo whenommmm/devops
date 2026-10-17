@@ -353,8 +353,8 @@ helm install web ./mychart -n helm-demo --create-namespace   # revision 1
 helm list -n helm-demo                    # releases in helm-demo
 kubectl get deploy,pods,svc -n helm-demo  # what the chart created
 kubectl get secrets -n helm-demo          # Helm's revision records
-kubectl port-forward -n helm-demo svc/web-mychart 8080:80   # in a 2nd tab (Cmd + T)
-curl -I http://localhost:8080             # back in tab 1
+kubectl port-forward -n helm-demo svc/web-mychart 9080:80   # in a 2nd tab (Cmd + T)
+curl -I http://localhost:9080             # back in tab 1
 ```
 **What each line does:**
 - `cd ~/devops-practice/helm`: work from the folder that holds `mychart`.
@@ -362,8 +362,8 @@ curl -I http://localhost:8080             # back in tab 1
 - `helm list -n helm-demo`: the releases in that namespace: `web  helm-demo  1 … deployed  mychart-0.1.0  1.16.0`. APP VERSION is only what Chart.yaml claims; the image really is `nginx:1.27`.
 - `kubectl get deploy,pods,svc -n helm-demo`: commas list several kinds at once. Expect `web-mychart` 2/2, two Pods Running, `service/web-mychart` ClusterIP 80/TCP: ordinary Kubernetes objects.
 - `kubectl get secrets -n helm-demo`: shows `sh.helm.release.v1.web.v1`, the Secret holding Helm's record of revision 1.
-- `kubectl port-forward -n helm-demo svc/web-mychart 8080:80`: run it in a 2nd tab and leave it running. It opens a tunnel from port 8080 on your Mac to port 80 of the Service (`local:remote`).
-- `curl -I http://localhost:8080`: sends a request through the tunnel; `-I` = fetch only the response headers. Expect `HTTP/1.1 200 OK` and `Server: nginx/1.27.x`.
+- `kubectl port-forward -n helm-demo svc/web-mychart 9080:80`: run it in a 2nd tab and leave it running. It opens a tunnel from port 9080 on your Mac to port 80 of the Service (`local:remote`).
+- `curl -I http://localhost:9080`: sends a request through the tunnel; `-I` = fetch only the response headers. Expect `HTTP/1.1 200 OK` and `Server: nginx/1.27.x`.
 The Service is `ClusterIP`, which your Mac can't reach directly, so the port-forward opens a tunnel. It really connects to **one Pod**, so after each upgrade it breaks (`lost connection to pod`): press Ctrl + C and run it again.
 
 **Upgrade, break, roll back:**

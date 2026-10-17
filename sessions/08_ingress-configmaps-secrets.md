@@ -90,9 +90,9 @@ kubectl expose deployment api --port=80 --target-port=8080
 kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" --dry-run=client -o yaml > ingress.yaml   # only WRITES the YAML
 kubectl apply -f ingress.yaml
 kubectl get ingress                   # shop  nginx  shop.example.com …
-kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80   # in Tab 2; leave it running
-curl -H "Host: shop.example.com" http://localhost:8080/   # served by web-…
-curl -i http://localhost:8080/        # 404 Not Found
+kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 9080:80   # in Tab 2; leave it running
+curl -H "Host: shop.example.com" http://localhost:9080/   # served by web-…
+curl -i http://localhost:9080/        # 404 Not Found
 ```
 **What each line does:**
 - `minikube addons list | grep ingress`: should show `│ ingress │ minikube │ enabled ✅ │`. If it says disabled, run `minikube addons enable ingress` and wait 1–2 minutes.
@@ -103,9 +103,9 @@ curl -i http://localhost:8080/        # 404 Not Found
 - `kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" … > ingress.yaml`: writes (doesn't create) an Ingress named `shop`. `--class` = the IngressClass; `--rule` = `host/path=service:port`, and the `*` at the end means pathType `Prefix`; `--dry-run=client` = pretend only; `-o yaml` = print as YAML; `>` = save into the file. Open it to see the nesting: rules → host → paths → backend.
 - `kubectl apply -f ingress.yaml`: creates the Ingress from the file (`-f` = file).
 - `kubectl get ingress`: `shop  nginx  shop.example.com  192.168.49.2  80`. The ADDRESS can take about a minute to appear: the controller is picking the Ingress up.
-- `kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80`: (in Tab 2, Cmd + T) carries your Mac's port 8080 to the controller's port 80. It keeps the terminal busy; leave it running.
-- `curl -H "Host: shop.example.com" http://localhost:8080/`: sends a request whose Host header is `shop.example.com` (`-H` = add or replace a header), as a browser would. The echo server replies `Request served by web-…` and shows the request it got, including `X-Forwarded-For: 127.0.0.1`: reverse proxies add these `X-Forwarded-…` headers so the app can still learn the original client and host.
-- `curl -i http://localhost:8080/`: `-i` = also show the response headers. Now the Host is `localhost`, which matches no rule, so the controller itself answers `HTTP/1.1 404 Not Found`.
+- `kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 9080:80`: (in Tab 2, Cmd + T) carries your Mac's port 9080 to the controller's port 80. It keeps the terminal busy; leave it running. *(9080, not the usual 8080: your other kind cluster `stockpilot` already owns 127.0.0.1:8080 and :8443 on this Mac, so those ports would reach the wrong cluster.)*
+- `curl -H "Host: shop.example.com" http://localhost:9080/`: sends a request whose Host header is `shop.example.com` (`-H` = add or replace a header), as a browser would. The echo server replies `Request served by web-…` and shows the request it got, including `X-Forwarded-For: 127.0.0.1`: reverse proxies add these `X-Forwarded-…` headers so the app can still learn the original client and host.
+- `curl -i http://localhost:9080/`: `-i` = also show the response headers. Now the Host is `localhost`, which matches no rule, so the controller itself answers `HTTP/1.1 404 Not Found`.
 
 *Leave the port-forward running for the routing and TLS steps below.*
 
@@ -215,13 +215,13 @@ code ingress.yaml                     # replace everything with the worked examp
 kubectl apply -f ingress.yaml         # shop configured (= updated)
 kubectl get ingress shop              # PORTS 80, 443
 kubectl describe ingress shop         # TLS + each rule's Pods
-kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80 8443:443   # in Tab 2: Ctrl + C the old one first
-curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/api/orders   # api-…
-curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/apix         # web-…
-curl -k --resolve api.example.com:8443:127.0.0.1 https://api.example.com:8443/               # api-…
-curl -i -H "Host: shop.example.com" http://localhost:8080/   # 308 Permanent Redirect
-curl --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/   # no -k → certificate error
-curl -kv --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/ 2>&1 | grep "subject:"   # CN=shop.example.com
+kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 9080:80 9443:443   # in Tab 2: Ctrl + C the old one first
+curl -k --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443/api/orders   # api-…
+curl -k --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443/apix         # web-…
+curl -k --resolve api.example.com:9443:127.0.0.1 https://api.example.com:9443/               # api-…
+curl -i -H "Host: shop.example.com" http://localhost:9080/   # 308 Permanent Redirect
+curl --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443/   # no -k → certificate error
+curl -kv --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443/ 2>&1 | grep "subject:"   # CN=shop.example.com
 ```
 **What each line does:**
 - `kubectl create secret tls shop-tls --cert=tls.crt --key=tls.key`: stores your certificate (`--cert`) and private key (`--key`) in a Secret of type `kubernetes.io/tls` named `shop-tls`.
@@ -231,12 +231,12 @@ curl -kv --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443
 - `kubectl apply -f ingress.yaml`: `ingress.networking.k8s.io/shop configured` (= the existing Ingress was updated).
 - `kubectl get ingress shop`: HOSTS `shop.example.com,api.example.com` and PORTS `80, 443` (443 because of `tls:`).
 - `kubectl describe ingress shop`: shows `TLS: shop-tls terminates …` and each rule with the Pod it reaches, e.g. `/api  api:80 (10.244.0.154:8080)`.
-- `kubectl port-forward … 8080:80 8443:443`: (in Tab 2: press Ctrl + C on the old port-forward first) two ports now: Mac 8080 → HTTP (80), and Mac 8443 → HTTPS (443).
-- `curl -k --resolve shop.example.com:8443:127.0.0.1 https://shop.example.com:8443/api/orders`: `--resolve name:port:127.0.0.1` = "for this name and port, connect to 127.0.0.1" (no DNS needed, and SNI and the Host header carry the real name); `-k` = accept the self-signed certificate. Answered by `api-…` with `GET /api/orders`: the full path reaches the app.
-- `… https://shop.example.com:8443/apix`: answered by `web-…`, because `/apix` isn't below `/api` (Prefix compares whole segments).
-- `curl -k --resolve api.example.com:8443:127.0.0.1 https://api.example.com:8443/`: answered by `api-…`: host-based routing.
-- `curl -i -H "Host: shop.example.com" http://localhost:8080/`: plain HTTP now gets `HTTP/1.1 308 Permanent Redirect` with `Location: https://shop.example.com`.
-- `curl --resolve … https://shop.example.com:8443/` (no `-k`): curl checks the certificate and refuses: `curl: (60) SSL certificate problem: self signed certificate`.
+- `kubectl port-forward … 9080:80 9443:443`: (in Tab 2: press Ctrl + C on the old port-forward first) two ports now: Mac 9080 → HTTP (80), and Mac 9443 → HTTPS (443).
+- `curl -k --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443/api/orders`: `--resolve name:port:127.0.0.1` = "for this name and port, connect to 127.0.0.1" (no DNS needed, and SNI and the Host header carry the real name); `-k` = accept the self-signed certificate. Answered by `api-…` with `GET /api/orders`: the full path reaches the app.
+- `… https://shop.example.com:9443/apix`: answered by `web-…`, because `/apix` isn't below `/api` (Prefix compares whole segments).
+- `curl -k --resolve api.example.com:9443:127.0.0.1 https://api.example.com:9443/`: answered by `api-…`: host-based routing.
+- `curl -i -H "Host: shop.example.com" http://localhost:9080/`: plain HTTP now gets `HTTP/1.1 308 Permanent Redirect` with `Location: https://shop.example.com`.
+- `curl --resolve … https://shop.example.com:9443/` (no `-k`): curl checks the certificate and refuses: `curl: (60) SSL certificate problem: self signed certificate`.
 - `curl -kv … 2>&1 | grep "subject:"`: `-v` = verbose: prints the TLS details on stderr (the error output); `2>&1` sends stderr into the pipe too, so `grep` can filter it. `subject: CN=shop.example.com` proves the controller presented **your** certificate.
 
 ### ✅ Check 59

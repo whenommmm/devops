@@ -332,7 +332,7 @@ Argo CD is **already installed** on your Mac, so skip the install.
 - ⚠️ **Apple Silicon:** the guestbook image is **amd64 only**; Colima usually emulates it, but if its Pod shows `CrashLoopBackOff` / `exec format error`, the app is **Synced but Degraded**: a real "Synced ≠ Healthy" example.
 ```bash
 kubectl get pods -n argocd      # ~7 Pods Running
-kubectl port-forward svc/argocd-server -n argocd 8080:443   # in a SECOND tab
+kubectl port-forward svc/argocd-server -n argocd 9080:443   # in a SECOND tab
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo   # admin's password
 mkdir -p ~/devops-practice/gitops && cd ~/devops-practice/gitops
 code guestbook-app.yaml                                     # paste the YAML above, save
@@ -349,7 +349,7 @@ kubectl delete namespace guestbook --ignore-not-found       # then Ctrl + C the 
 ```
 **What each line does:**
 - `kubectl get pods -n argocd`: lists the Pods in the `argocd` namespace (`-n` = namespace); about 7 should be `Running` (argocd-server, repo-server, application-controller, redis, dex-server…).
-- `kubectl port-forward svc/argocd-server -n argocd 8080:443`: forwards port 8080 on your Mac to port 443 (HTTPS) of the `argocd-server` Service. It keeps running, so do it in a second terminal tab, then open https://localhost:8080 (self-signed certificate warning: **Advanced → Proceed**).
+- `kubectl port-forward svc/argocd-server -n argocd 9080:443`: forwards port 9080 on your Mac to port 443 (HTTPS) of the `argocd-server` Service. It keeps running, so do it in a second terminal tab, then open https://localhost:9080 (self-signed certificate warning: **Advanced → Proceed**).
 - `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo`: reads the Secret holding admin's first password; `-o jsonpath=…` prints only its `password` field, `base64 -d` decodes it (Secret values are stored base64-encoded), and `echo` adds a newline so your prompt doesn't stick to it. Log in as `admin` with it.
 - `mkdir -p … && cd …` and `code guestbook-app.yaml`: make a practice folder and open a new file in VS Code; paste the Application YAML above and save.
 - `kubectl apply -f guestbook-app.yaml`: creates the Application from the file (`-f` = file): `application.argoproj.io/guestbook created` (a Warning about the finalizer is harmless). Argo CD now clones the repo and deploys the `guestbook` folder.
