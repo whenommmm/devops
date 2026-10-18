@@ -99,7 +99,7 @@ spec:
 | MCQ | Sync status vs health status | Sync: Synced = cluster matches Git, OutOfSync = differs (new commit or drift). Health: Healthy, Progressing (rolling out), Degraded (failed, e.g. CrashLoopBackOff), Missing (not created yet). Synced + Degraded = Git's config is broken: fix it in Git. |
 | MCQ | Manual vs automated sync, and `selfHeal` | Manual sync (default) shows OutOfSync and waits for Sync (`argocd app sync guestbook`). `automated` syncs when Git changes; without `selfHeal` a manual `kubectl` change stays (OutOfSync), with it Argo CD reverts it within seconds. |
 | CMD | Create and check an Application | `kubectl apply -f guestbook-app.yaml` → creates the Application · `kubectl get applications -n argocd` → lists each with its sync and health status, e.g. `Synced   Healthy`. |
-| CMD | Open the Argo CD web UI | `kubectl port-forward svc/argocd-server -n argocd 8080:443` → Mac port 8080 to the Service's HTTPS port 443; open `https://localhost:8080`. |
+| CMD | Open the Argo CD web UI | `kubectl port-forward svc/argocd-server -n argocd 8080:443` → Mac port 8080 to the Service's HTTPS port 443; open `https://localhost:8080` (on your own Mac use 9080, because 8080 is taken by your other cluster). |
 
 ## 📝 Quiz (5 MCQs; answer in chat as "1 B, 2 D, …")
 **1.** Your customer SLA promises 99.5% availability per 30 days, and your team's SLO is 99.9%. This month, outages have already added up to 50 minutes. Which statement is correct?
