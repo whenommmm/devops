@@ -28,11 +28,11 @@
 | B5 | Ingress: controller, host/path routing, TLS | NOT STARTED | – | – | – |
 | B6 | ConfigMaps (env + volume) | NOT STARTED | – | – | – |
 | B6 | Secrets (env + volume, base64) | NOT STARTED | – | – | – |
-| B6 | Volumes, PV, PVC, StorageClass, dynamic provisioning | NOT STARTED | – | – | – |
+| B6 | Volumes, PV, PVC, StorageClass, dynamic provisioning | LEARNING (fast) · WEAK: emptyDir survives container restarts, dies with the Pod | Fast quiz Q1 ✗ (A), Q2 ✓ | Oct 18 | final flash |
 | B6 | StatefulSets (stateful vs stateless) | NOT STARTED | – | – | – |
-| B6 | Probes: liveness / readiness / startup | NOT STARTED | – | – | – |
-| B6 | Resource requests & limits | NOT STARTED | – | – | – |
-| B6 | HPA | NOT STARTED | – | – | – |
+| B6 | Probes: liveness / readiness / startup | WEAK (fast): startup probe only at start; external checks go in readiness | Fast quiz Q3 ✗ (A) | Oct 18 | final flash |
+| B6 | Resource requests & limits | UNDERSTOOD (fast) | Fast quiz Q4 ✓ | Oct 18 | – |
+| B6 | HPA | WEAK (fast): % of request, ceil, clamp to max, 5-min scale-down | Fast quiz Q5 not attempted (explained) | Oct 18 | final flash |
 | B6 | Scheduling: nodeSelector, affinity, taints/tolerations | NOT STARTED | – | – | – |
 | B6 | Security: ServiceAccounts, RBAC | NOT STARTED | – | – | – |
 | B6 | K8s troubleshooting (Pending, CrashLoopBackOff, ImagePullBackOff, selectors, ports, probes) | NOT STARTED | – | – | – |
@@ -88,6 +88,9 @@
 | Resolving a conflict: edit + remove markers → `git add` (marks resolved) → `git commit` | Oct 11 | 1 (L2 ½, missed add/commit) | Oct 12 warm-up | 0 |
 | **127.0.0.1 = same machine only; listen on 0.0.0.0 to accept outside connections** (in K8s: an app on 127.0.0.1 = only its own Pod, even with endpoints listed) | Oct 6 | **3** (26.3 ½, Net quiz Q2, K8s III Q1) | Oct 17 warm-up | 0 |
 | Short DNS names resolve in the Pod's OWN namespace; other namespaces need `svc.namespace` | Oct 16 | 1 (57.1 guess) | Oct 17 warm-up | 0 |
+| **emptyDir lives with the POD: survives a container restart, deleted when the Pod is deleted (only a PVC survives the Pod)** | Oct 18 | 1 (09 fast Q1) | final flash | 0 |
+| **Startup probe runs only at the beginning; checks on external things (DB) go in READINESS, never liveness** | Oct 18 | 1 (09 fast Q3) | final flash | 0 |
+| **HPA: % = use ÷ REQUEST; desired = ceil(pods × cur% ÷ target%); clamp to min/max; scale-down waits 5 min** | Oct 18 | 1 (09 fast Q5, asked to explain) | final flash | 0 |
 | minikube (docker driver) node IP isn't reachable from the Mac → use port-forward / `minikube service --url`; tunnel is for LoadBalancer/Ingress | Oct 16 | 1 (55.2) | Oct 18 | 0 |
 | Headless Service (clusterIP: None): no virtual IP, kube-proxy writes no rules, DNS returns Pod IPs | Oct 16 | 1 (Q4) | Oct 18 | 0 |
 | FQDN = Fully Qualified Domain Name; format `<svc>.<ns>.svc.cluster.local` | Oct 16 | 1 (L2 ½) | Oct 17 warm-up | 0 |
@@ -224,3 +227,4 @@
 | D4 | "Oct 6" (S1) | Networking + Git | Networking done (IP, CIDR, ports, TCP/UDP, DNS, HTTP/HTTPS/TLS, commands, LB/proxy); Git not started (usage limit hit) | Git → Oct 11 |
 | – | Oct 7–10 | – | **Lost days** (usage limit). Tools were installed meanwhile: Colima, docker, compose, minikube, kubectl, helm, terraform | Plan rebuilt as v4 |
 | D5 | "Oct 11" | Git + Docker I | Git (answered in chat, practical pending) · Docker I rewritten at zero-knowledge level, answered + unbiased re-test 3/4 · Docker II/III session files written | – |
+- **Oct 18 (exam eve, fast track):** 09 fast quiz 2/5 (Q2 ✓ Q4 ✓; Q1 ✗ emptyDir, Q3 ✗ startup probe, Q5 explained).
