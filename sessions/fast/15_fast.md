@@ -82,18 +82,51 @@ resource "aws_route_table_association" "public" {
 
 ⚠️ **Exam trap:** a subnet is public because its associated route table sends `0.0.0.0/0` to an internet gateway, not because of its address range. A security group (per server, stateful, allow only) differs from a NACL (Network Access Control List: per subnet, stateless, allow and deny).
 
-## ⚡ Must-remember
-| Term / command | Meaning |
-|---|---|
-| `terraform init` | Downloads providers and writes the lock file |
-| `terraform plan` | Dry run: shows what would change, changes nothing |
-| `apply` / `destroy` | Build after `yes` / delete everything in the state, in reverse |
-| `~` vs `-/+` | Update in place vs delete then recreate (1 add + 1 destroy) |
-| `terraform.tfstate` | Never edit or commit it (secrets in plain text) |
-| Variable sources | `default` < `TF_VAR_` < `terraform.tfvars` < `-var` |
-| IaaS / PaaS / SaaS | EC2 (you patch the OS) / Heroku (you bring code) / Gmail |
-| Public subnet | Route table sends `0.0.0.0/0` to an internet gateway |
-| Security group | Per-server firewall: allow rules only, stateful |
+## 🎯 Exam checklist (everything that could be asked)
+*MCQ = know the fact · CMD = be able to write it from memory.*
+
+| Asked as | Item | What you must know / the exact command |
+|---|---|---|
+| MCQ | **IaC** · what it is | IaC = Infrastructure as Code: you describe infrastructure (servers, networks, firewalls) in text files kept in Git, and a tool makes the real infrastructure match them. |
+| MCQ | Declarative vs imperative | Declarative code describes only the end result and the tool works out the steps (Terraform, `kubectl apply -f`), whereas imperative code lists steps run exactly (shell script, `kubectl create`), so running it twice does the work twice. |
+| MCQ | Idempotent | Doing it many times gives the same result as doing it once: re-applying unchanged Terraform code prints `No changes.` Trap: `mkdir data` fails the 2nd time ("File exists"), whereas `mkdir -p data` doesn't. |
+| MCQ | Provisioning vs configuration management | Terraform and CloudFormation (AWS only) provision, i.e. create the infrastructure itself, whereas Ansible (agentless, over SSH) configures software inside existing servers. Chef and Puppet need an agent (background program) on every server. |
+| MCQ | **Terraform architecture** · core vs providers | Terraform core reads the `.tf` files, works out the order, compares them with what exists and makes the plan, whereas providers are plugins that call one platform's API (Application Programming Interface): `aws`, `azurerm`, `google`. |
+| MCQ | HCL and `.tf` files | HCL = HashiCorp Configuration Language; Terraform files end in `.tf`. Every `.tf` file in a folder is read together, so file names and block order don't matter. |
+| CMD | `provider` block | `provider "aws" { region = "ap-south-1" }`: settings for one provider (here, the AWS region to build in). The provider itself is downloaded by `terraform init`. |
+| CMD | **HCL blocks** · `variable` | `variable "env" { default = "dev" }`: declares an input whose value is `dev` unless another is given; read it elsewhere as `var.env`. |
+| CMD | `resource` | `resource "aws_s3_bucket" "logs" { bucket = "${var.env}-logs" }`: type `aws_s3_bucket`, local name `logs` (a nickname inside the code only); `${ }` puts the value in, giving `dev-logs`. |
+| CMD | `output` | `output "bucket_name" { value = aws_s3_bucket.logs.bucket }`: printed after `apply` as `bucket_name = "dev-logs"`, and any time with `terraform output`. |
+| MCQ | References and build order | One resource refers to another as `TYPE.LOCAL_NAME.ATTRIBUTE`, e.g. `aws_vpc.main.id`. Terraform orders creation from these references (not block order) and builds unrelated resources in parallel. |
+| MCQ | `data` source vs `resource` | A `resource` block creates and manages something, whereas a `data` block (`data "aws_availability_zones" "all" {}`) only looks up something that exists, creates nothing, and is read as `data.aws_availability_zones.all.names`. |
+| MCQ | Variable precedence (weakest to strongest) | `default` < `TF_VAR_env` (set with `export TF_VAR_env=qa`) < `terraform.tfvars` (loaded automatically) < `*.auto.tfvars` < `-var` / `-var-file`. Trap: `terraform.tfvars` beats `TF_VAR_`. |
+| CMD | **Workflow** · `terraform init` | `terraform init`: run first in the folder; downloads the providers into `.terraform/`, sets up the backend and writes the lock file `.terraform.lock.hcl` (commit it). Skip it, and `plan` fails asking you to run `init`. |
+| CMD | `fmt` and `validate` | `terraform init && terraform fmt && terraform validate`: `fmt` rewrites files in the standard layout (`fmt -check` changes nothing, exits 3 if messy); `validate` checks syntax and references without contacting any cloud. |
+| CMD | `plan` vs `apply` | `terraform plan` is a dry run: it reads the real resources, compares them with the code and prints what would change, touching nothing, whereas `terraform apply` shows a fresh plan and acts only after you type `yes`. |
+| CMD | `-auto-approve` and `output -raw` | `terraform apply -auto-approve && terraform output -raw pet_name`: applies without the `yes` prompt (pipelines), then prints only that output's value, with no quotes or `pet_name =`. |
+| CMD | `-var` and a saved plan | `terraform plan -var 'env=prod' -out=tfplan`, later `terraform apply tfplan`: sets `env` for this run only, saves the plan to a file, and applies exactly that reviewed plan. |
+| CMD | `-var-file` | `terraform apply -var-file=prod.tfvars`: loads variable values from that file (lines like `env = "prod"`); like `-var`, it beats `terraform.tfvars`, `TF_VAR_` and the default. |
+| CMD | `terraform destroy` | `terraform destroy`: after `yes`, deletes everything recorded in the state, in reverse dependency order; it never touches anything created by hand. |
+| CMD | `state list` | `terraform state list && terraform destroy -auto-approve`: lists every resource address in the state (e.g. `local_file.note`, `random_pet.name`), then deletes them all without the `yes` prompt. |
+| MCQ | Plan symbols and summary line | `+` create, `-` destroy, `~` update in place (e.g. a tag change), `-/+` replace: delete the old object, then create a new one (`# forces replacement`). A replacement counts as 1 to add + 1 to destroy. |
+| MCQ | **State** · `terraform.tfstate` | A JSON file, written after the first apply, mapping each resource to its real cloud ID: Terraform's only memory of what it owns. Lose it, and the next plan wants to create everything again as duplicates. |
+| MCQ | State rules | Never edit it by hand, and never commit it to Git: it holds secrets in plain text (even values marked `sensitive`), and copies on different laptops go out of date. |
+| MCQ | Remote backend and state locking | Teams share one state in a remote backend, such as an S3 (Simple Storage Service) bucket. With locking, a second run during an apply stops with `Error acquiring the state lock` instead of corrupting it. |
+| MCQ | Drift | Drift = a manual change to real infrastructure. The next plan notices it and plans to put things back as the code says; Terraform never rewrites your `.tf` files. |
+| MCQ | **Cloud** · fundamentals | Cloud computing = renting computers, storage and networks over the internet on demand, instead of buying on-premises servers. Pay-as-you-go = pay per use; elasticity = servers added automatically as demand rises, removed as it falls. |
+| MCQ | IaaS | IaaS = Infrastructure as a Service: the provider runs the hardware and network; you manage the OS (and patch it), runtime, app and data. Example: AWS EC2 virtual machines. |
+| MCQ | PaaS | PaaS = Platform as a Service: you manage only your app and data; the provider runs the OS, runtime and scaling. Examples: Heroku, AWS Elastic Beanstalk. |
+| MCQ | SaaS | SaaS = Software as a Service: you simply use finished software. Examples: Gmail, Microsoft 365, Salesforce. |
+| MCQ | Region vs Availability Zone | A region is a separate geographic area of data centres (`ap-south-1`, Mumbai), whereas an AZ (Availability Zone) is one or more data centres inside a region with their own power and network (`ap-south-1a`). |
+| MCQ | High availability | The app keeps working when a part fails: servers in two AZs behind a load balancer survive the loss of one AZ. Trap: two servers in the same AZ are not highly available. |
+| MCQ | **Networking** · VPC / VNet | VPC = Virtual Private Cloud: your own isolated network inside the cloud (Azure calls it a VNet, Virtual Network). Its range, e.g. `10.0.0.0/16`, spans all the AZs of one region. |
+| MCQ | Subnet: public vs private | A subnet is a smaller slice of the VPC's range (`10.0.1.0/24`) in exactly one AZ. A public subnet can be reached from the internet (web servers), whereas a private subnet cannot (databases). |
+| MCQ | Route table and internet gateway | A route table lists "destination → target" routes: `10.0.0.0/16 → local` keeps traffic inside the VPC; `0.0.0.0/0 → internet gateway` sends everything else out. The internet gateway does nothing until a route points to it. |
+| MCQ | NAT gateway | NAT = Network Address Translation. A NAT gateway sits in a public subnet and lets private-subnet servers start connections out, while nobody outside can start one in. |
+| MCQ | Security group vs NACL | A security group is a per-server firewall with allow rules only and is stateful (replies go out with no outbound rule), whereas a NACL (Network Access Control List) is per subnet, stateless, and has allow and deny rules. |
+| MCQ | **Compute, storage, identity** · acronyms | EC2 = Elastic Compute Cloud (AWS virtual machines), AMI = Amazon Machine Image (the disk a VM boots from), S3 = Simple Storage Service, IAM = Identity and Access Management. |
+| CMD | **Provisioning with Terraform** · subnet | `resource "aws_subnet" "public" { … }` containing `vpc_id = aws_vpc.main.id` and `cidr_block = "10.0.1.0/24"`, one per line: the reference puts the subnet in the VPC, so the VPC is created first. |
+| CMD | Route table association | `resource "aws_route_table_association" "public" { … }` containing `subnet_id = aws_subnet.public.id` and `route_table_id = aws_route_table.public.id`: attaches the route table holding `0.0.0.0/0 → internet gateway`. Trap: this, not the address range, makes a subnet public; until associated, it uses the main table (local route only). |
 
 ## 📝 Quiz (5 MCQs; answer in chat as "1 B, 2 D, …")
 

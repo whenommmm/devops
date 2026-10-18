@@ -82,14 +82,46 @@ Examiners check understanding, so tell one story:
 
 ⚠️ **Exam trap:** An Ingress is only routing rules, whereas the Ingress controller (ingress-nginx) is the program that applies them.
 
-## ⚡ Must-remember
-| Term / command | Meaning |
-|---|---|
-| `--wait` on Helm | Succeed only when Pods are Ready |
-| `helm rollback counter 1` | New revision that copies revision 1 |
-| Ingress 404 / 503 | No rule matched / no Ready endpoints |
-| HPA `<unknown>` | No CPU request, or no Metrics Server |
-| Push vs pull deploy | CI runs Helm / Argo CD syncs from Git |
+## 🎯 Exam checklist (everything that could be asked)
+*MCQ = know the fact · CMD = be able to write it from memory.*
+
+| Asked as | Item | What you must know / the exact command |
+|---|---|---|
+| MCQ | **Lifecycle** · the loop | Plan → Code → Build → Test → Release → Deploy → Operate → Monitor, plus a feedback arrow from Monitor back to Plan; without that arrow it is only a pipeline. |
+| MCQ | CI vs Continuous Delivery vs Deployment | CI (Continuous Integration) builds and tests every change and reports failures, which developers fix; Continuous Delivery needs a human approval before production, whereas Continuous Deployment goes there automatically. |
+| MCQ | Push vs pull deployment | In push deployment the CI runner runs `helm upgrade` holding cluster credentials, whereas in pull (GitOps) Argo CD inside the cluster syncs from Git; GitHub's runners can't reach minikube, so only pull works there. |
+| CMD | **App → GitHub** · branch and PR | `git switch -c feature/welcome` → commit → `gh pr create --fill`: work on a branch and open a PR (Pull Request); a protected `main` accepts merges only via a PR with a green workflow. |
+| CMD | Push rejected with `(fetch first)` | `git pull --rebase origin main && git push`: replays your commits on top of your teammate's new ones, then pushes. Never `--force` a shared branch. |
+| MCQ | **Dockerize** · Dockerfile rules | `COPY requirements.txt .` and `RUN pip install` go before `COPY . .` (a changed layer rebuilds every later one); run as a non-root `USER appuser`; the app listens on `0.0.0.0`. |
+| CMD | Build tagged with the commit SHA | `TAG=$(git rev-parse --short HEAD) && docker build -t counter:$TAG .`: stores the short commit SHA (Secure Hash Algorithm ID), then builds `counter:<sha>` from the current folder (the final `.`). |
+| MCQ | SHA tag vs `:latest` | A commit-SHA tag is unique and traces back to its exact code, whereas `:latest` is ambiguous and makes `imagePullPolicy` default to `Always`; any other tag defaults to `IfNotPresent`. |
+| MCQ | **CI/CD pipeline** · jobs | Jobs `test` → `build-scan-push` (`needs: test`) → `deploy`, each on a fresh runner (parallel unless `needs:` links them); push and deploy run only `if: github.ref == 'refs/heads/main'`, so PRs are never deployed. |
+| MCQ | Full vs short SHA trap | `${{ github.sha }}` is the full 40-character SHA, whereas `git rev-parse --short HEAD` gives 7 characters; pushing one and deploying the other gives `ImagePullBackOff` (tag not found). |
+| MCQ | **Security scan** · what each scans | gitleaks = leaked secrets · SAST (Static Application Security Testing, Bandit) = your source code · SCA (Software Composition Analysis, pip-audit) = libraries with known CVEs (Common Vulnerabilities and Exposures) · Trivy = the image · DAST (Dynamic Application Security Testing) = attacks the running app. |
+| CMD | Trivy image gate | `trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 counter:$TAG`: exits 1 on fixable HIGH/CRITICAL findings, failing the job before the push; without `--exit-code 1` Trivy exits 0. |
+| MCQ | Gate traps | A gate is a step whose non-zero exit stops the job; `\|\| true` forces exit 0 and deletes the gate; `--severity CRITICAL` ignores HIGH, so an image with 3 HIGH and 0 CRITICAL passes. |
+| MCQ | Bandit `B104` and pip-audit fixes | B104 flags `host="0.0.0.0"`, but a container app must listen there, so add a reviewed `# nosec B104` on that line; for a pip-audit finding, upgrade to the fixed version. |
+| CMD | Tag and push to the registry | `docker tag counter:$TAG ghcr.io/vansh/counter:$TAG && docker push ghcr.io/vansh/counter:$TAG`: adds a registry name (no copy is made), then uploads it; run `docker login ghcr.io` first. |
+| CMD | **Deploy to Kubernetes** · load the image | `minikube image load counter:$TAG`: minikube cannot see Colima's Docker images; skip this and Pods show `ErrImagePull` / `ImagePullBackOff`, because Kubernetes searches Docker Hub instead. |
+| MCQ | Rolling update vs other strategies | A rolling update (the default) replaces Pods gradually, so old Pods keep serving beside a broken new one; Recreate stops all first; blue-green switches all traffic at once; canary sends a small share of traffic first. |
+| CMD | Check the rollout | `kubectl rollout status deploy/counter-web -n counter --timeout=120s`: waits for the rollout; exits 0 on success, or 1 with `timed out waiting for the condition`, turning a CI step red. |
+| CMD | **Helm** · install or upgrade | `helm upgrade --install counter ./charts/counter -n counter --create-namespace --set image.tag=$TAG --wait`: installs if missing, otherwise upgrades (safe to re-run); succeeds only once Pods are Ready. |
+| MCQ | `--wait` trap | Without `--wait`, Helm prints `STATUS: deployed` as soon as Kubernetes accepts the YAML, even if the new Pod is in `ImagePullBackOff`; `--rollback-on-failure` (Helm 3: `--atomic`) rolls back automatically on failure. |
+| MCQ | Helm words | A chart is the package, whereas a release is an installed copy with numbered revisions; `values.yaml` holds defaults and `--set` overrides them; with an HPA on, the template leaves out `replicas`. |
+| MCQ | **Ingress** · rules vs controller | An Ingress is only routing rules (host `counter.local`, path `/` → Service `counter-web:80`), whereas the Ingress controller (ingress-nginx) is the program that applies them. |
+| CMD | Inspect and test the Ingress | `kubectl describe ingress counter-web -n counter` shows host, path, backend Service and Events; test with `curl -H "Host: counter.local" http://localhost:9080/` after port-forwarding the controller. |
+| MCQ | Ingress 404 vs 503 | A 404 from nginx means no rule matched (wrong Host header or path, or no `ingressClassName`), whereas a 503 means a rule matched but its Service has no Ready endpoints. |
+| CMD | **HPA** · create and watch | `kubectl autoscale deployment counter-web -n counter --cpu=50% --min=2 --max=5` (older spelling `--cpu-percent=50`), then `kubectl get hpa -n counter -w` to watch replicas change. |
+| MCQ | How the HPA scales | HPA = Horizontal Pod Autoscaler; it needs Metrics Server and CPU requests (the target is a % of the request); desired = ceil(current × actual ÷ target), so 2 Pods at 90% with a 50% target → 4. |
+| MCQ | HPA shows `cpu: <unknown>/50%` | The Pods have no CPU request or Metrics Server is missing (normal for the first 1–2 minutes); if `kubectl top pods` prints numbers, Metrics Server works, so the CPU request is missing. |
+| MCQ | **Monitoring** · the three tools | Prometheus pulls (scrapes) `/metrics`, Grafana draws dashboards, Alertmanager sends alerts; a Prometheus target marked DOWN means it cannot scrape the app, so Grafana shows no data. |
+| CMD | **Troubleshooting** · Service endpoints | `kubectl get endpoints counter-web -n counter` (or `get endpointslices`): none means the selector does not match Pod labels (`kubectl get pods -n counter --show-labels`) or Pods aren't Ready; present but refused means a wrong `targetPort`. |
+| MCQ | Pod status words | `ImagePullBackOff` = wrong name/tag, image not loaded, or no registry login (`describe` → Events); `CrashLoopBackOff` = app starts, then crashes (`logs --previous`); `Pending` = can't be scheduled, e.g. `Insufficient cpu`. |
+| MCQ | Readiness vs liveness | A failing readiness probe shows `0/1` and removes the Pod from the Service's endpoints without a restart, whereas a failing liveness probe restarts the container. |
+| MCQ | `1/1 Running` but `/` returns 500 | Probes hit `/health`, which skips Redis, so Pods look healthy; `kubectl logs deploy/counter-web -n counter` shows `Error -2 connecting to cache:6379`: `REDIS_HOST` names a missing Service. |
+| CMD | **Final project demo** · show it all | `kubectl get pods,svc,ingress,hpa,pvc -n counter` (pvc = PersistentVolumeClaim), then `curl` twice (visited 1, then 2 times); close with "Terraform builds the VPC (Virtual Private Cloud) and cluster underneath". |
+| CMD | Break it, then roll back | `helm history counter -n counter` then `helm rollback counter 1 -n counter`: a rollback is a new revision, so history ends at revision 3, "Rollback to 1". |
+| MCQ | Smoke test, postmortem, runbook | A smoke test is a tiny post-deploy check that `/` returns 200; a blameless postmortem records causes and fixes, not blame; a runbook is a step-by-step guide for known problems. |
 
 ## 📝 Quiz (5 MCQs; answer in chat as "1 B, 2 D, …")
 
