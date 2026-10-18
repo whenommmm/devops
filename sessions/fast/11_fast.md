@@ -73,19 +73,46 @@ helm uninstall web                                      → objects AND history 
 
 ⚠️ **Exam trap:** `--wait` only marks a bad upgrade `failed`, whereas `--rollback-on-failure` (called `--atomic` in Helm 3) also rolls it back automatically.
 
-## ⚡ Must-remember
-| Term / command | Meaning |
-|---|---|
-| Chart / release / repo | Package / one installed named copy / server storing charts |
-| `version` vs `appVersion` | Chart's own SemVer version / version of the app inside |
-| `helm template` | Render and print YAML; nothing reaches the cluster |
-| `helm lint` | Check structure and template syntax; misses misspelt keys |
-| Precedence | values.yaml < `-f` (later file wins) < `--set` |
-| `helm rollback web 2` | New revision that copies revision 2 |
-| `--reuse-values` | Upgrade starts from the last release's values |
-| `--wait --timeout 2m` | Wait for Ready Pods; else `failed` and non-zero exit |
-| `helm list` | Current namespace only; `-A` for all namespaces |
-| Tiller | Helm 2's in-cluster server; gone since Helm 3 |
+## 🎯 Exam checklist (everything that could be asked)
+*MCQ = know the fact · CMD = be able to write it from memory.*
+
+| Asked as | Item | What you must know / the exact command |
+|---|---|---|
+| MCQ | **What is Helm?** · definition | Helm is the package manager for Kubernetes (like `brew`), a CNCF (Cloud Native Computing Foundation) project. It rolls back a whole app as one unit, whereas `kubectl rollout undo` undoes one Deployment. |
+| MCQ | **Helm charts** · chart vs release | A chart is the package (like a Docker image), whereas a release is one installed, named copy of it (like a container). Installing as `shop-dev` and `shop-prod` = 1 chart, 2 releases. |
+| MCQ | Revision | A revision is a numbered version of a release: the install is revision 1, and every upgrade **or rollback** adds 1. |
+| MCQ | Chart repository vs Artifact Hub | A chart repository ("repo") is a server that stores charts for download (like Docker Hub), whereas Artifact Hub (artifacthub.io) is only a search website saying which repo has a chart. |
+| MCQ | Helm is client-only | Helm 3+ runs only on your Mac: it renders the chart into plain YAML and sends it to the API server via your kubeconfig (`~/.kube/config`), so it has your exact kubectl permissions. |
+| MCQ | Tiller (trap) | Helm 2 had Tiller, a server inside the cluster (in `kube-system`), usually with admin rights: a security risk. Helm 3+ removed it, so `helm version` shows no "Server" part. |
+| MCQ | Where release records live | Each revision is saved as a Secret named `sh.helm.release.v1.<release>.v<revision>` (e.g. `sh.helm.release.v1.web.v1`) in the release's own namespace. Helm 2 used ConfigMaps in `kube-system`. |
+| CMD | **Chart structure** · scaffold | `helm create mychart`: builds a working starter chart (it deploys nginx) in a new folder `mychart`, which you adapt instead of starting from nothing. |
+| MCQ | Chart folder layout | `Chart.yaml` = ID card (name, versions); `values.yaml` = default settings; `templates/` = YAML with blanks; `charts/` = dependencies (downloaded by `helm dependency update`); `.helmignore` = files left out when packaging. |
+| MCQ | `_helpers.tpl` and `NOTES.txt` | Files in `templates/` whose names start with `_` never become Kubernetes objects (`_helpers.tpl` holds reusable named templates). `NOTES.txt` is printed after install and upgrade. |
+| MCQ | **Chart.yaml** · `apiVersion` and `type` | `apiVersion: v2` = the chart format for Helm 3+ (v1 = Helm 2), not a Kubernetes API like `apps/v1`. `type: application` is installable, whereas `library` holds only snippets. |
+| MCQ | `version` vs `appVersion` | `version` is the chart's own version (required, SemVer = Semantic Versioning, `MAJOR.MINOR.PATCH`), whereas `appVersion` is only a label for the app's version inside. `helm list` shows both. |
+| MCQ | Which version to bump (trap) | A template-only change (e.g. a new label) with the same app bumps `version` only. Shipping a newer app bumps `appVersion` and also `version`. |
+| MCQ | **values.yaml** · defaults | values.yaml holds the chart's default settings ("knobs"), e.g. `replicaCount`, `image.repository`, `image.tag`. `tag: ""` makes the template use appVersion; `ingress.enabled: false` makes the Ingress template render nothing. |
+| CMD | **Templates** · writing the blanks | `replicas: {{ .Values.replicaCount }}` and `image: "{{ .Values.image.repository }}:{{ .Values.image.tag \| default .Chart.AppVersion }}"`. Everything in `{{ }}` is an action (Go templating) that rendering replaces with a value. |
+| MCQ | Built-in objects | `.Values` = values.yaml merged with your overrides; `.Release.Name` / `.Release.Namespace` = the release's name / namespace; `.Chart.Name`, `.Chart.Version`, `.Chart.AppVersion` = Chart.yaml fields, capitalised. |
+| MCQ | Pipe and template functions | The pipe `\|` passes a value into a function. `default X` uses X when the value is empty; `quote` adds double quotes; `required "msg" X` stops with an error if X is empty. |
+| MCQ | Typos are silent (trap) | Keys are case-sensitive: `.Values.replicacount` (small c) renders `replicas:` with nothing after it, with no error, and `helm lint` still passes. |
+| CMD | Check the chart | `helm lint mychart`: checks structure and template syntax without installing. A missing `}` gives `[ERROR]` and exit code 1; it cannot catch a misspelt values key. |
+| MCQ | **values.yaml overrides** · precedence | Lowest to highest: chart's values.yaml < `-f first.yaml` < `-f later.yaml` < `--set`. `--set` wins even when typed before `-f`; order matters only between `-f` files. |
+| MCQ | Key-by-key merge | Merging is key by key: a `-f` file (long form `--values`) setting only `image.tag` leaves `image.repository` at its default. In `--set image.tag=1.28`, dots mean nesting. |
+| CMD | Render without installing | `helm template web ./mychart`: renders and prints the YAML on your Mac; nothing reaches the cluster, whereas `helm install` creates a release. `-s templates/deployment.yaml` prints one file. |
+| CMD | **Install & Upgrade** · install | `helm install shop ./mychart -n dev --create-namespace -f values-dev.yaml`: creates release `shop` (revision 1, `deployed`) in namespace `dev`, creating `dev` if missing. |
+| CMD | Upgrade with `--set` | `helm upgrade web ./mychart --set image.tag=1.28-alpine --set replicaCount=3` (or `--set image.tag=1.28-alpine,replicaCount=3`): re-renders with new values and creates a new revision. |
+| CMD | Upgrade or install | `helm upgrade --install shop ./chart`: upgrades the release if it exists and installs it if not, so one command works for every deploy (used in CI/CD pipelines). |
+| MCQ | Status words | `deployed` = the live revision; `superseded` = an older revision replaced by a newer one; `failed` = Helm knows that revision went wrong. |
+| MCQ | `--set` is not remembered (trap) | Each upgrade starts from the chart's values.yaml plus only this command's flags, so an earlier `--set image.tag` is lost. Fix: pass `-f values-prod.yaml` every time, or add `--reuse-values`. |
+| MCQ | "deployed" does not mean working (trap) | Without `--wait`, Helm returns at once: a bad image tag still shows `STATUS: deployed` while a new Pod sits in `ImagePullBackOff` and the rolling update keeps the old Pods serving. |
+| CMD | Wait for healthy Pods | `helm upgrade web ./mychart --wait --timeout 2m`: waits for Ready Pods, else the revision is `failed` and Helm exits non-zero. `--rollback-on-failure` (Helm 3: `--atomic`) also rolls back automatically. |
+| CMD | **Rollback** · command | `helm rollback web 2`: puts back revision 2's chart and values. With no revision number, it goes back to the previous revision. |
+| MCQ | A rollback is a new revision (trap) | Rolling back from revision 3 to 2 creates revision 4 ("Rollback to 2"), a copy of revision 2. Revision 3 stays in the history; nothing is deleted. |
+| CMD | See releases and revisions | `helm list -A` lists releases in all namespaces (plain `helm list` = current namespace only); `helm history web -n demo` lists every revision with its STATUS and DESCRIPTION. |
+| CMD | **Deploying an app** · public chart | `helm repo add bitnami https://charts.bitnami.com/bitnami`, then `helm repo update` (refresh its chart list), then `helm install my-nginx bitnami/nginx`. |
+| MCQ | Name clash, "missing" release | A release name must be unique within its namespace (else `cannot reuse a name that is still in use`). An empty plain `helm list` means the release is in another namespace. |
+| CMD | Remove a release | `helm uninstall web -n demo`: deletes the release's objects AND its history (`--keep-history` keeps the records), so `helm history web -n demo` then says `Error: release: not found`. |
 
 ## 📝 Quiz (5 MCQs; answer in chat as "1 B, 2 D, …")
 
