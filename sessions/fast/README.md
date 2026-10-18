@@ -13,4 +13,4 @@ Read in this order. Answer each quiz in chat as "1 B, 2 D, …" and Claude grade
 | 8 | `14_fast.md` | Monitoring, Observability & GitOps |
 | 9 | `16_fast.md` | Final project: the whole lifecycle + troubleshooting |
 
-The full sessions (`sessions/NN_*.md`) stay unchanged for reference. Answer keys: `NN_fast_ANSWERS.md` (don't open before answering).
+The full sessions (`sessions/not-fast/NN_*.md`) stay unchanged for reference. Answer keys: `NN_fast_ANSWERS.md` (don't open before answering).
