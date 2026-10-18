@@ -60,16 +60,46 @@ spec:
 
 ⚠️ **Exam trap:** Synced is not Healthy: "Synced + Degraded" means Argo CD applied exactly what Git says, but that configuration is broken, so the fix must go into Git.
 
-## ⚡ Must-remember
-| Term | Meaning |
-|---|---|
-| `up` | 1 = last scrape worked, 0 = it failed |
-| `rate(x[5m])` | per-second increase of counter `x` over 5 minutes |
-| Alertmanager | groups, silences and routes alerts that Prometheus fires |
-| Default ports | Prometheus 9090, Grafana 3000, Alertmanager 9093 |
-| Error budget | 100% − SLO; 99.9% over 30 days = 43.2 minutes |
-| Synced / OutOfSync | live state matches Git / differs from Git |
-| `selfHeal` / `prune` | revert manual cluster changes / delete what was removed from Git |
+## 🎯 Exam checklist (everything that could be asked)
+*MCQ = know the fact · CMD = be able to write it from memory.*
+
+| Asked as | Item | What you must know / the exact command |
+|---|---|---|
+| MCQ | **Observability** · monitoring vs observability | Monitoring watches signals chosen in advance and sends alerts ("is something wrong?"), whereas observability lets you find "why?" from the system's data, even for unpredicted problems. Monitoring is part of observability, not a rival. |
+| MCQ | **Three pillars** · metrics | Named numbers measured again and again (`http_requests_total`); each becomes a time series of (time, value) pairs. Answers "how much, how often?" across all requests. Tool: Prometheus. |
+| MCQ | Logs | Timestamped text records of single events; answer "what exactly happened?". Tools: ELK = Elasticsearch + Logstash + Kibana; EFK swaps in Fluentd; Loki is cheaper (indexes only labels). |
+| MCQ | Traces | One request's path across services, made of spans (one step in one service) sharing a trace ID; shows which service was slow in that one request, whereas a metric shows totals. Tools: Jaeger, OpenTelemetry. |
+| MCQ | Four golden signals | Latency (how long requests take; p95 = 300 ms means 95% were faster), traffic (requests per second), errors (e.g. share of HTTP 5xx), saturation (how full CPU, memory, disk or a queue is). |
+| MCQ | **SLI / SLO / SLA** | SLI = Service Level Indicator (the measurement); SLO = Service Level Objective (team's internal target); SLA = Service Level Agreement (looser customer contract, e.g. 99.5% vs SLO 99.9%, with penalties such as refunds). |
+| MCQ | Error budget | 100% − SLO. At 99.9% over 30 days (43,200 min): 0.1% × 43,200 = 43.2 minutes allowed; when used up, risky releases stop. Missing the SLO only uses budget, whereas missing the SLA costs money. |
+| MCQ | **Prometheus** · what it does | A free monitoring system with a built-in TSDB (time-series database). Every scrape interval (e.g. 15 s) it scrapes each target's `/metrics` page and stores the numbers; default retention 15 days. |
+| MCQ | Pull model vs push model | Prometheus pulls (fetches from each target), so a dead target is noticed at once (`up` = 0), whereas with push it is noticed only when data stops. Short-lived jobs push to the Pushgateway, which Prometheus scrapes. |
+| MCQ | Exporters · node-exporter vs kube-state-metrics vs metrics-server | An exporter translates another system's numbers into Prometheus format. node-exporter = a machine's CPU, memory, disk; kube-state-metrics = Kubernetes object state (available replicas, restarts); metrics-server = current CPU/memory for `kubectl top` and the HPA (Horizontal Pod Autoscaler), no history. |
+| MCQ | Counter vs gauge | A counter only goes up (resets to 0 on restart; names end in `_total`, e.g. total requests served), whereas a gauge goes up and down (memory in use, jobs waiting in a queue right now). |
+| CMD | PromQL (Prometheus Query Language) `up` | `up` → 1 if the target's last scrape worked, 0 if it failed · `up == 0` → only the down targets · `sum(up)` → how many targets are up. |
+| CMD | PromQL `rate()` | `rate(http_requests_total[5m])` → a counter's average per-second increase over the last 5 minutes. With a label filter: `rate(prometheus_http_requests_total{handler="/metrics"}[5m])`. Needs 2+ samples, so "No data" right after start-up. |
+| CMD | PromQL `sum by` | `sum by (job) (rate(http_requests_total[5m]))` → adds the series together and returns one result per value of the `job` label (each label combination is its own time series). |
+| CMD | `prometheus.yml` scrape config | `global.scrape_interval: 15s` · `scrape_configs[].job_name: prometheus` · `scrape_configs[].static_configs[].targets: ["prometheus:9090"]` → a job is a named group of targets to scrape. |
+| CMD | Read raw metrics from the terminal | `curl -s http://localhost:9090/metrics \| grep "^prometheus_http_requests_total" \| head -3` → silent download, keep only lines starting with that name, show the first 3. |
+| MCQ | Alerting rule and `for:` | Rule `expr: up == 0` with `for: 5m`: inactive → pending (true, but not yet for 5 minutes) → firing. If the target recovers while pending, the alert never fires and nobody is notified. |
+| MCQ | Prometheus vs Alertmanager | Prometheus evaluates alerting rules and decides when an alert fires, whereas Alertmanager only groups, de-duplicates, silences and routes fired alerts to people (email, Slack, PagerDuty). |
+| MCQ | Default ports | Prometheus 9090, Pushgateway 9091, Alertmanager 9093, node-exporter 9100, Grafana 3000 (first login admin / admin), Loki 3100. |
+| MCQ | **Grafana** · Prometheus vs Grafana | Prometheus scrapes, stores and queries metrics, whereas Grafana stores none and only visualises them: a dashboard is one page, a panel is one query plus a chart. If Prometheus stops, panels show "No data". |
+| MCQ | Data source and the `localhost` trap | A data source is a saved connection Grafana queries live (Prometheus: metrics; Loki/Elasticsearch: logs; Jaeger/Tempo: traces). In Docker Compose use `http://prometheus:9090`; `localhost` inside Grafana's container is Grafana itself ("connection refused"). |
+| CMD | Restart the Compose stack from scratch | `docker compose down -v && docker compose up -d && docker compose logs -f grafana` → remove containers, network and the `grafana-data` volume, start again in the background, follow Grafana's logs. |
+| MCQ | **GitOps** · Git as the single source of truth | Git holds the desired state (declarative YAML); an agent inside the cluster keeps the live state matching it. Any difference is drift, and because Git is the single source of truth, Git wins. |
+| MCQ | The four GitOps principles | Declarative, versioned and immutable (every change is a Git commit), pulled automatically (by an agent), continuously reconciled (drift keeps being corrected). "Pushed by CI" is NOT a principle. |
+| MCQ | Push-based CD (Continuous Deployment) vs pull-based GitOps | In push-based CD the CI (Continuous Integration) runner runs `kubectl`/`helm`, so cluster credentials sit in CI secrets, whereas in GitOps the in-cluster agent only connects out to Git, so credentials never leave the cluster. |
+| MCQ | Continuous Deployment with GitOps · app repo vs config repo | CI still tests, builds and pushes the image from the app repo (source code), then commits the new image tag to the config repo (Kubernetes YAML), which Argo CD watches (polls about every 3 minutes). |
+| CMD | GitOps rollback | `git revert HEAD && git push` in the config repo → Argo CD syncs the previous version back. `kubectl rollout undo` changes only the cluster, which then disagrees with Git. |
+| MCQ | **Argo CD** · what it is | A free GitOps tool that runs as Pods inside the cluster (namespace `argocd`), pulls from Git and keeps the cluster synchronised, with a web UI and the `argocd` command-line tool. It never writes cluster state back to Git. |
+| CMD | Application YAML: identity | `apiVersion: argoproj.io/v1alpha1` · `kind: Application` · `metadata.namespace: argocd` · `spec.project: default` → an Application is a CRD (Custom Resource Definition) object living in Argo CD's namespace. |
+| CMD | Application YAML: source and destination | `spec.source.repoURL: https://github.com/me/shop-config.git` · `spec.source.targetRevision: HEAD` · `spec.source.path: k8s` (where the desired state is) · `spec.destination.server: https://kubernetes.default.svc` · `spec.destination.namespace: shop` (where to deploy). |
+| CMD | Application YAML: sync policy | `spec.syncPolicy.automated.selfHeal: true` (undo manual cluster changes) · `spec.syncPolicy.automated.prune: true` (delete what was removed from Git; off by default) · `spec.syncPolicy.syncOptions: [CreateNamespace=true]` (create the namespace if missing). |
+| MCQ | Sync status vs health status | Sync: Synced = cluster matches Git, OutOfSync = differs (new commit or drift). Health: Healthy, Progressing (rolling out), Degraded (failed, e.g. CrashLoopBackOff), Missing (not created yet). Synced + Degraded = Git's config is broken: fix it in Git. |
+| MCQ | Manual vs automated sync, and `selfHeal` | Manual sync (default) shows OutOfSync and waits for Sync (`argocd app sync guestbook`). `automated` syncs when Git changes; without `selfHeal` a manual `kubectl` change stays (OutOfSync), with it Argo CD reverts it within seconds. |
+| CMD | Create and check an Application | `kubectl apply -f guestbook-app.yaml` → creates the Application · `kubectl get applications -n argocd` → lists each with its sync and health status, e.g. `Synced   Healthy`. |
+| CMD | Open the Argo CD web UI | `kubectl port-forward svc/argocd-server -n argocd 8080:443` → Mac port 8080 to the Service's HTTPS port 443; open `https://localhost:8080`. |
 
 ## 📝 Quiz (5 MCQs; answer in chat as "1 B, 2 D, …")
 **1.** Your customer SLA promises 99.5% availability per 30 days, and your team's SLO is 99.9%. This month, outages have already added up to 50 minutes. Which statement is correct?
