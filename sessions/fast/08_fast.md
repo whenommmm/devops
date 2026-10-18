@@ -65,19 +65,58 @@ A **Secret** is like a ConfigMap but for sensitive data: passwords, tokens, keys
 
 ⚠️ **Exam trap:** a Secret volume uses `secretName:`, whereas a ConfigMap volume uses `name:`. Never commit Secret YAML to Git; real projects use HashiCorp Vault, the External Secrets Operator, or Sealed Secrets.
 
-## ⚡ Must-remember
-| Item | Meaning |
-|---|---|
-| Ingress resource vs controller | The rules vs the program that applies them |
-| `ingressClassName: nginx` | Which controller handles this Ingress |
-| `pathType: Prefix` | The path and everything below it, whole segments only (`/api` doesn't match `/apix`) |
-| 404 · 503 · 308 from NGINX | No rule matched · backend Service missing or no Ready Pods · HTTP sent to HTTPS |
-| `kubectl create secret tls NAME --cert=… --key=…` | The TLS Secret an Ingress uses |
-| `valueFrom` vs `envFrom` | One key → one variable vs every key → variables |
-| ConfigMap changed | Mounted files update; env vars need new Pods |
-| `CreateContainerConfigError` | A referenced ConfigMap, Secret or key is missing |
-| `data:` vs `stringData:` | Already base64 vs plain text |
-| `--dry-run=client -o yaml` | Print the YAML, create nothing |
+## 🎯 Exam checklist (everything that could be asked)
+*MCQ = know the fact · CMD = be able to write it from memory.*
+
+| Asked as | Item | What you must know / the exact command |
+|---|---|---|
+| MCQ | **Ingress** · what it is | One entry point for a cluster's HTTP/HTTPS traffic that sends each request to a Service by host name and URL path (a reverse proxy) |
+| MCQ | Ingress resource vs controller | The resource only holds the rules, whereas the controller (NGINX, Traefik) is the program that applies them. No controller = nothing routes |
+| MCQ | Ingress vs Service | Ingress routes at Layer 7 (host, path), whereas a Service routes at Layer 4 (IP and port). Every Ingress rule still points at a Service |
+| MCQ | Why Ingress, not one LoadBalancer per app | One load balancer, one public IP and one place for certificates, plus routing by URL |
+| MCQ | `ingressClassName: nginx` | Says which controller handles this Ingress. With no class and no default class, no controller picks it up |
+| MCQ | Host header | The site name every HTTP request carries. The controller compares it with each rule's `host`, so one IP can serve many sites |
+| MCQ | Ingress `apiVersion` | `networking.k8s.io/v1` |
+| CMD | Turn on the controller (minikube) | `minikube addons enable ingress` (installs NGINX into the namespace `ingress-nginx`) |
+| CMD | Generate Ingress YAML | `kubectl create ingress shop --class=nginx --rule="shop.example.com/*=web:80" --dry-run=client -o yaml > ingress.yaml` (the `*` makes it `Prefix`) |
+| CMD | Ingress YAML key paths | `spec.ingressClassName` · `spec.rules[].host` · `http.paths[].path` + `pathType` · `backend.service.name` + `backend.service.port.number` · `spec.tls[].hosts` + `secretName` |
+| CMD | Test a host rule without DNS | `curl -H "Host: shop.example.com" http://localhost:9080/` |
+| MCQ | **Routing** · several paths match | The longest path wins: `/api/orders` goes to the `/api` rule, not `/` |
+| MCQ | `Prefix` vs `Exact` | Prefix matches the path and everything below it by whole segments (`/api` matches `/api/x`, not `/apix`), whereas Exact matches only that path |
+| MCQ | The path reaches the app unchanged | The app receives `/api/orders`, not `/orders`. Removing `/api` needs the `nginx.ingress.kubernetes.io/rewrite-target` annotation |
+| MCQ | 404 · 503 · 308 from NGINX | 404 = no rule matched · 503 = a rule matched but its Service is missing or has no Ready Pods · 308 = HTTP sent to HTTPS because `tls:` is set |
+| MCQ | `spec.defaultBackend` | A Service that gets every request no rule matches, instead of the controller's 404 |
+| MCQ | **TLS** termination | The controller holds the certificate and key, decrypts HTTPS, reads host and path, and sends plain HTTP to the Pods. The Pods need no certificate |
+| MCQ | The TLS Secret | Type `kubernetes.io/tls`, exactly two keys `tls.crt` + `tls.key`, in the same namespace as the Ingress |
+| CMD | Create the TLS Secret | `kubectl create secret tls shop-tls --cert=tls.crt --key=tls.key` |
+| MCQ | SNI (Server Name Indication) | The host name sent in plain text during the TLS handshake, so the controller can choose the right certificate before decrypting |
+| MCQ | Self-signed certificate, `curl -k` | Signed by itself, not by a CA (Certificate Authority), so curl refuses it unless you add `-k` (testing only). cert-manager + Let's Encrypt get real ones automatically |
+| CMD | Test HTTPS through a tunnel | `curl -k --resolve shop.example.com:9443:127.0.0.1 https://shop.example.com:9443/` |
+| MCQ | **ConfigMap** · what it is | Stores non-secret settings as text key–value pairs under `data:` (max 1 MiB), so one image runs everywhere ("config outside the code", Twelve-Factor App) |
+| MCQ | ConfigMap scope | A Pod can only use ConfigMaps (and Secrets) from its own namespace |
+| CMD | Create from values | `kubectl create configmap app-config --from-literal=APP_COLOR=blue --from-literal=APP_MODE=prod` |
+| CMD | Create from a file | `kubectl create configmap app-files --from-file=settings.properties` (the file name becomes the key; `--from-env-file` makes one key per line) |
+| CMD | One key → one env var | `env:` → `name: COLOR` + `valueFrom.configMapKeyRef` (`name: app-config`, `key: APP_COLOR`) |
+| CMD | Every key → env vars | `envFrom:` → `- configMapRef:` → `name: app-config` |
+| CMD | Every key → a file | `volumes:` → `configMap:` → `name: app-config`, plus `volumeMounts:` → `mountPath: /etc/config` |
+| MCQ | After you change a ConfigMap | Mounted files update by themselves (about a minute), whereas env vars keep the old value until the container restarts |
+| CMD | Make Pods read new env values | `kubectl rollout restart deployment/web` |
+| MCQ | `CreateContainerConfigError` | The Pod refers to a ConfigMap, Secret or key that doesn't exist. The container was never created: 0 restarts, no logs. Create it and the kubelet retries by itself |
+| MCQ | Numbers and true/false in ConfigMap YAML | Quote them (`"50"`, `"true"`), or the API server rejects the ConfigMap |
+| MCQ | Same variable from `env` and `envFrom` | The value from `env` wins |
+| MCQ | `immutable: true` vs `optional: true` | immutable locks a ConfigMap or Secret against changes, whereas optional lets the Pod start even if it's missing |
+| MCQ | **Secret** vs ConfigMap | A Secret is for sensitive data: base64-encoded, `describe` shows only sizes, mounted as files in tmpfs (memory), access limited by RBAC (Role-Based Access Control) |
+| MCQ | base64 | Encoding, not encryption: anyone can reverse it with `base64 -d`, no key needed |
+| MCQ | Encryption at rest | Secrets stored encrypted inside etcd. It's off by default |
+| MCQ | Secret types | `Opaque` (the default, `generic`) · `kubernetes.io/tls` (Ingress certificates) · `kubernetes.io/dockerconfigjson` (registry login, used through `imagePullSecrets`) |
+| CMD | Create a generic Secret | `kubectl create secret generic db-secret --from-literal=DB_USER=admin --from-literal=DB_PASSWORD='S3cr3t!'` |
+| CMD | Print one decoded value | `kubectl get secret db-secret -o jsonpath='{.data.DB_PASSWORD}' \| base64 -d` |
+| CMD | Encode by hand | `echo -n 'S3cr3t!' \| base64` (`-n` stops a hidden newline being encoded too) |
+| MCQ | `data:` vs `stringData:` | `data:` needs values already in base64, whereas `stringData:` takes plain text and the API server encodes it |
+| CMD | Use a Secret in a Pod | `valueFrom.secretKeyRef` (one key) · `envFrom:` → `- secretRef:` (every key) · volume `secret:` → `secretName: db-secret` (not `name:`) |
+| MCQ | Files vs env vars for secrets | Files are safer: env vars leak into logs and child processes, whereas Secret files can be read-only and live in memory |
+| MCQ | Secret good practice | Never commit Secret YAML to Git; limit access with RBAC; use HashiCorp Vault, the External Secrets Operator, or Sealed Secrets |
+| CMD | Print YAML without creating anything | `kubectl create secret generic db --from-literal=PASS=x --dry-run=client -o yaml` (works for ConfigMaps, Deployments, Ingresses too) |
 
 ## 📝 Quiz (answer in chat as "1 B, 2 D, …")
 
