@@ -82,15 +82,46 @@ desiredReplicas = ceil( currentReplicas × currentUtilization ÷ targetUtilizati
 
 ⚠️ **Exam trap:** The HPA changes how many Pods run (horizontal scaling), whereas the VPA (Vertical Pod Autoscaler) changes how big each Pod is (vertical scaling).
 
-## ⚡ Must-remember
-| Term | Meaning |
-|---|---|
-| PV statuses | Available → Bound → Released (PVC: Pending → Bound) |
-| `Retain` / `Delete` | Keep PV and data as Released / delete PV and storage |
-| `0/1 Running`, RESTARTS 0 | Readiness failing: no traffic, no restart |
-| `OOMKilled`, exit 137 | Went over the memory limit |
-| HPA math | ceil(replicas × current ÷ target), capped by min/max |
-| `cpu: <unknown>/50%` | Pods have no CPU request |
+## 🎯 Exam checklist (everything that could be asked)
+*MCQ = know the fact · CMD = be able to write it from memory.*
+
+| Asked as | Item | What you must know / the exact command |
+|---|---|---|
+| MCQ | **Volumes** · what a volume is | A folder that belongs to the Pod, not to one container: all its containers (e.g. the app and a sidecar helper) can mount it, and its files survive container restarts. |
+| MCQ | `emptyDir` vs `hostPath` | An `emptyDir` is created empty when the Pod starts and is deleted with the Pod, whereas a `hostPath` (a folder on the node) survives the Pod, but only on that one node. |
+| MCQ | `configMap` / `secret` volume | Each key becomes a file whose content is the value; mounted files update by themselves within about a minute, whereas env vars are read only at container start. |
+| CMD | Mount a volume (→ = indented under) | Pod level: `volumes:` → `- name: shared-data` → `emptyDir: {}`. In the container: `volumeMounts:` → `- name: shared-data` → `mountPath: /shared`. Different names make `kubectl apply` fail with `Not found`. |
+| CMD | Run a command in one container | `kubectl exec shared-pod -c reader -- cat /data/log.txt`: `-c` picks the container (needed when the Pod has two); everything after `--` runs inside it. |
+| MCQ | **PV, PVC & StorageClass** · PV vs PVC | A PersistentVolume (PV) is a real piece of storage (cluster-scoped), whereas a PersistentVolumeClaim (PVC) is a request for storage (in a namespace); a Pod names the PVC, never the PV. |
+| MCQ | StorageClass · dynamic vs static | A StorageClass is a storage category plus a provisioner that creates a PV automatically when a claim arrives (dynamic), whereas in static provisioning an admin creates every PV by hand. |
+| MCQ | Binding rules | Always one PVC to one PV, which needs the same class, the requested access mode and at least the requested size; a claim never splits across PVs or grows one. |
+| MCQ | Access modes (full forms) | RWO = ReadWriteOnce (read-write by one node), ROX = ReadOnlyMany (read-only by many nodes), RWX = ReadWriteMany (read-write by many nodes), RWOP = ReadWriteOncePod (one single Pod). |
+| MCQ | Trap: RWO | RWO means one node, not one Pod: Pods on that node can share it, whereas a Pod on another node gets `Multi-Attach error` and stays `ContainerCreating`. |
+| MCQ | Reclaim policy `Delete` vs `Retain` | When the PVC is deleted, `Delete` removes the PV and its real storage, whereas `Retain` keeps the PV and its data in status `Released` until an admin cleans up. |
+| MCQ | PV and PVC statuses | A PV goes Available → Bound → Released; a PVC goes Pending → Bound. A `Released` PV is not `Available`, so a new claim never binds to it automatically. |
+| CMD | Write a PVC and use it | `kind: PersistentVolumeClaim` with `spec.accessModes: [ReadWriteOnce]` and `spec.resources.requests.storage: 100Mi` (no `storageClassName` = default class). Pod: `volumes:` → `- name: data` → `persistentVolumeClaim:` → `claimName: notes-pvc`. |
+| CMD | List storage objects | `kubectl get pv,pvc` lists PVs and PVCs in one command (comma, no space); `kubectl get storageclass` lists the classes, the default one marked `(default)`. |
+| CMD | Why is a PVC `Pending`? | `kubectl describe pvc bad-pvc \| tail -3` shows only the last 3 lines (the Events), e.g. `storageclass "fast-ssd" not found` or `no persistent volumes available`. |
+| MCQ | **Probes** · why they exist | Without probes, Kubernetes only checks that the main process runs, so a deadlocked app still shows `Running`. A probe is a repeated kubelet health check set in the Pod spec (Docker's `HEALTHCHECK` is ignored). |
+| MCQ | Liveness vs readiness | A failing liveness probe kills and restarts the container (RESTARTS climbs), whereas a failing readiness probe leaves it `0/1 Running`, out of the Service's endpoints (its traffic list), with no restart. |
+| MCQ | Startup probe | Runs only until it first succeeds, and until then liveness and readiness are paused; it allows up to `failureThreshold × periodSeconds` to start (30 × 10 s = 300 s). |
+| MCQ | Probe check types | `httpGet` passes on status 200–399 (301 passes, 404/500 fail); `tcpSocket` passes if a TCP connection opens; `exec` passes on exit code 0 (a command missing from the image gives 127, so it always fails). |
+| MCQ | Probe timing defaults | `initialDelaySeconds` 0, `periodSeconds` 10, `timeoutSeconds` 1, `failureThreshold` 3 (failures in a row before acting), `successThreshold` 1 (must be 1 for liveness and startup). |
+| MCQ | Trap: liveness on a slow app | A liveness probe that fires before a slow app is up causes a restart loop ending in `CrashLoopBackOff`; adding a startup probe fixes it, adding a readiness probe does not. |
+| MCQ | Trap: database check | Dependency checks ("can I reach the database?") go in readiness, whereas in liveness one database blip restarts every Pod at once. With no readiness probe, users get errors during rollouts. |
+| CMD | Probe YAML (in the container) | `livenessProbe:` → `exec:` → `command: ["cat", "/tmp/healthy"]`, with `periodSeconds: 5` and `failureThreshold: 3` beside `exec:`. `readinessProbe:` → `httpGet:` → `path: /ready`, `port: 80`. |
+| MCQ | **Requests & limits** · request vs limit | A request is the amount reserved, and the scheduler adds up requests (not real use) to pick a node, whereas a limit is the maximum the container may use. |
+| MCQ | Going over a limit | Over its CPU limit a container is throttled (slowed, not killed), whereas over its memory limit it is `OOMKilled` (OOM = Out Of Memory), exit code 137 (128 + 9, where 9 = SIGKILL). |
+| MCQ | QoS (Quality of Service) classes | Guaranteed = requests equal limits for CPU and memory; Burstable = some set; BestEffort = none set. A node short of memory evicts BestEffort Pods first, Guaranteed last. |
+| CMD | `resources` YAML (in the container) | `resources:` → `requests:` → `cpu: 200m`, `memory: 128Mi`; `limits:` → `cpu: 500m`, `memory: 256Mi`. `200m` = 200 millicores (a fifth of a core); `Mi` = mebibytes (powers of 1024). |
+| MCQ | **Metrics Server & HPA** · Metrics Server | An add-on (optional extra) that collects current CPU and memory use from every kubelet, keeps only the latest numbers (no history), and feeds `kubectl top pods` / `kubectl top nodes` and the HPA. |
+| MCQ | HPA formula | Every 15 s the HPA sets replicas = ceil(current replicas × current% ÷ target%), kept between `minReplicas` and `maxReplicas`; 2 Pods at 90% with target 50% → ceil(3.6) = 4. |
+| MCQ | Trap: % of the request | "50% CPU" means 50% of the request, never the limit: 4 Pods each using 250m of a 200m request = 125%, so the HPA wants ceil(4 × 125 ÷ 50) = 10. |
+| MCQ | Scaling down slowly | The HPA scales up fast but waits a 5-minute stabilization window before scaling down, to avoid flapping (removing then re-adding Pods); a manual `kubectl scale` is overridden at its next check. |
+| MCQ | `TARGETS cpu: <unknown>/50%` | The HPA can't calculate, usually because the Pods have no CPU request (`missing request for cpu`); otherwise Metrics Server is broken or the HPA is under a minute old. |
+| CMD | Create an HPA by command | `kubectl autoscale deployment web --cpu=60% --min=2 --max=8` (older spelling: `--cpu-percent=60`); watch it with `kubectl get hpa web -w`. |
+| CMD | HPA YAML keys | `apiVersion: autoscaling/v2`, `kind: HorizontalPodAutoscaler`, `spec.scaleTargetRef` (what to scale), `minReplicas`, `maxReplicas`, and a `metrics` entry for `cpu` with `averageUtilization: 50`. |
+| MCQ | HPA vs VPA | The HPA (Horizontal Pod Autoscaler) changes how many Pods run, whereas the VPA (Vertical Pod Autoscaler) changes each Pod's requests and limits; the Cluster Autoscaler adds or removes nodes. |
 
 ## 📝 Quiz (5 MCQs; answer in chat as "1 B, 2 D, …")
 
