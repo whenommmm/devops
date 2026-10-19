@@ -36,7 +36,7 @@
 | B6 | Scheduling: nodeSelector, affinity, taints/tolerations | NOT STARTED | – | – | – |
 | B6 | Security: ServiceAccounts, RBAC | NOT STARTED | – | – | – |
 | B6 | K8s troubleshooting (Pending, CrashLoopBackOff, ImagePullBackOff, selectors, ports, probes) | UNDERSTOOD (fast) | Fast quiz 5/5 (logs --previous, CreateContainerConfigError, ngnix typo, requests vs use, 127.0.0.1) | Oct 19 | – |
-| B7 | Helm | NOT STARTED | – | – | – |
+| B7 | Helm | WEAK (fast): value precedence, --set forgotten on upgrade, version vs appVersion, deployed without --wait | Fast quiz 1/5 (Q3 ✓; Q1 ✗ D, Q2 ✗ A, Q4 not understood, Q5 ✗ A) | Oct 19 | final flash |
 | B7 | CI/CD concepts & deployment strategies | NOT STARTED | – | – | – |
 | B7 | GitHub Actions workflow YAML | NOT STARTED | – | – | – |
 | B7 | Complete CI/CD pipeline | NOT STARTED | – | – | – |
@@ -91,6 +91,9 @@
 | **emptyDir lives with the POD: survives a container restart, deleted when the Pod is deleted (only a PVC survives the Pod)** | Oct 18 | 1 (09 fast Q1) | final flash | 0 |
 | **Startup probe runs only at the beginning; checks on external things (DB) go in READINESS, never liveness** | Oct 18 | 1 (09 fast Q3) | final flash | 0 |
 | **HPA: % = use ÷ REQUEST; desired = ceil(pods × cur% ÷ target%); clamp to min/max; scale-down waits 5 min** | Oct 18 | 1 (09 fast Q5, asked to explain) | final flash | 0 |
+| **Helm values: values.yaml < -f (later file wins) < --set; merge is key by key; --set is FORGOTTEN on the next upgrade (use --reuse-values)** | Oct 19 | 2 (11 fast Q1, Q2) | final flash | 0 |
+| **Chart.yaml: version = the chart (packaging), appVersion = the app/image; `tag \| default .Chart.AppVersion`** | Oct 19 | 1 (11 fast Q4) | final flash | 0 |
+| **Helm 'deployed' without --wait proves nothing; Helm never auto-rolls back unless --rollback-on-failure/--atomic; rolling update keeps old Pods** | Oct 19 | 1 (11 fast Q5) | final flash | 0 |
 | minikube (docker driver) node IP isn't reachable from the Mac → use port-forward / `minikube service --url`; tunnel is for LoadBalancer/Ingress | Oct 16 | 1 (55.2) | Oct 18 | 0 |
 | Headless Service (clusterIP: None): no virtual IP, kube-proxy writes no rules, DNS returns Pod IPs | Oct 16 | 1 (Q4) | Oct 18 | 0 |
 | FQDN = Fully Qualified Domain Name; format `<svc>.<ns>.svc.cluster.local` | Oct 16 | 1 (L2 ½) | Oct 17 warm-up | 0 |
@@ -229,3 +232,4 @@
 | D5 | "Oct 11" | Git + Docker I | Git (answered in chat, practical pending) · Docker I rewritten at zero-knowledge level, answered + unbiased re-test 3/4 · Docker II/III session files written | – |
 - **Oct 18 (exam eve, fast track):** 09 fast quiz 2/5 (Q2 ✓ Q4 ✓; Q1 ✗ emptyDir, Q3 ✗ startup probe, Q5 explained).
 - **Oct 19 (exam day):** 10 fast quiz **5/5** (incl. the 127.0.0.1 trap, first time correct).
+- **Oct 19:** 11 fast quiz 1/5 (Helm precedence and memory rules weak).
