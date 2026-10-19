@@ -39,8 +39,8 @@
 | B7 | Helm | WEAK (fast): value precedence, --set forgotten on upgrade, version vs appVersion, deployed without --wait | Fast quiz 1/5 (Q3 ✓; Q1 ✗ D, Q2 ✗ A, Q4 not understood, Q5 ✗ A) | Oct 19 | final flash |
 | B7 | CI/CD concepts & deployment strategies | UNDERSTOOD (fast) | 12 fast Q1 ✓ (exit codes, Continuous Deployment), Q5 ✓ (secret masking) | Oct 19 | – |
 | B7 | GitHub Actions workflow YAML | WEAK (fast): jobs don't share files (artifacts), skipped steps after failure, silent vs 'Invalid workflow file' | 12 fast Q2 explained, Q3 ✗ (B), Q4 ✗ (D) | Oct 19 | final flash |
-| B7 | Complete CI/CD pipeline | NOT STARTED | – | – | – |
-| B7 | DevSecOps (SAST/DAST/SCA, scanning) | NOT STARTED | – | – | – |
+| B7 | Complete CI/CD pipeline | WEAK (fast): image name must be lowercase before ':'; `set image` exits 0, `rollout status` decides | 13 fast Q1 ✗ (A), Q2 ✗ (hedged A/D) | Oct 19 | final flash |
+| B7 | DevSecOps (SAST/DAST/SCA, scanning) | UNDERSTOOD (fast) | 13 fast Q3 ✓ (SCA transitive), Q4 ✓ (Trivy gate + pipe), Q5 ✓ (revoke first) | Oct 19 | – |
 | B7 | GitOps (ArgoCD, push vs pull) | NOT STARTED | – | – | – |
 | B8 | IaC concepts | NOT STARTED | – | – | – |
 | B8 | Terraform (HCL, init/plan/apply, state) | NOT STARTED | – | – | – |
@@ -97,6 +97,8 @@
 | **GitHub Actions: each JOB = new empty runner, files pass only via upload/download-artifact; needs: = order only** | Oct 19 | 1 (12 fast Q2) | final flash | 0 |
 | **After a failed step, later steps are SKIPPED (hidden `if: success()`) unless `if: always()`/`failure()`** | Oct 19 | 1 (12 fast Q3) | final flash | 0 |
 | **No run at all = wrong folder / branch / trigger (workflow_dispatch); red 'Invalid workflow file' = broken structure (no runs-on)** | Oct 19 | 1 (12 fast Q4) | final flash | 0 |
+| **`kubectl set image` exits 0 (only submits); `kubectl rollout status --timeout` exits 1 on failure: it's the real gate** | Oct 19 | 1 (13 fast Q2, hedged) | final flash | 0 |
+| **Docker image NAME (before ':') must be lowercase; `${{ github.repository }}` keeps capitals → `${GITHUB_REPOSITORY,,}`** | Oct 19 | 1 (13 fast Q1) | final flash | 0 |
 | minikube (docker driver) node IP isn't reachable from the Mac → use port-forward / `minikube service --url`; tunnel is for LoadBalancer/Ingress | Oct 16 | 1 (55.2) | Oct 18 | 0 |
 | Headless Service (clusterIP: None): no virtual IP, kube-proxy writes no rules, DNS returns Pod IPs | Oct 16 | 1 (Q4) | Oct 18 | 0 |
 | FQDN = Fully Qualified Domain Name; format `<svc>.<ns>.svc.cluster.local` | Oct 16 | 1 (L2 ½) | Oct 17 warm-up | 0 |
@@ -237,3 +239,4 @@
 - **Oct 19 (exam day):** 10 fast quiz **5/5** (incl. the 127.0.0.1 trap, first time correct).
 - **Oct 19:** 11 fast quiz 1/5 (Helm precedence and memory rules weak).
 - **Oct 19:** 12 fast quiz 2/5 (GitHub Actions job/step behaviour weak).
+- **Oct 19:** 13 fast quiz 3/5 (security strong; deploy-step exit codes and image naming weak).
