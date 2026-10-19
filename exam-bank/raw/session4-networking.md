@@ -1,4 +1,4 @@
-# Labs · Session 4 · Networking
+# Labs · Session 4 · Networking (answers use macOS commands)
 
 Acronyms used: IP = Internet Protocol · DNS = Domain Name System (turns names into IP addresses) · TCP = Transmission Control Protocol (reliable, ordered) · UDP = User Datagram Protocol (fast, no delivery guarantee) · ICMP = Internet Control Message Protocol (what `ping` uses) · HTTP/HTTPS = HyperText Transfer Protocol (Secure = encrypted with TLS, Transport Layer Security) · CIDR = Classless Inter-Domain Routing (the `/24` notation) · TTL = Time To Live · PID = Process ID.
 
@@ -6,94 +6,108 @@ Acronyms used: IP = Internet Protocol · DNS = Domain Name System (turns names i
 
 ## Lab 1 · Show the IP address, subnet, default route and listening ports
 
-**Answer (what to write in the exam):**
+**Answer (macOS):**
 ```bash
-ip addr show            # short form: ip a   → IP address + subnet prefix of each interface
-ip -4 addr show eth0    # only the IPv4 address of one interface (name may be ens33 / enp0s3)
-ip route show           # routing table; the "default" line is the default gateway
-ip route show default   # only the default route
-sudo ss -tulpn          # all listening TCP/UDP ports + which program owns each one
+ipconfig getifaddr en0
+ifconfig en0
+ipconfig getoption en0 subnet_mask
+route -n get default
+netstat -rn -f inet
+lsof -iTCP -sTCP:LISTEN -P -n
 ```
+**What each line does:**
+- `ipconfig getifaddr en0`: prints just your IP address on `en0` (on a MacBook, `en0` = Wi-Fi).
+- `ifconfig en0`: full details of that network card: IP address, netmask, broadcast address, `status: active`.
+- `ipconfig getoption en0 subnet_mask`: prints the subnet mask in dotted form.
+- `route -n get default`: shows the **default gateway** (the router) and which card it uses; `-n` = show numbers, don't look up names.
+- `netstat -rn -f inet`: the whole IPv4 routing table (`-r` = routes, `-n` = numbers, `-f inet` = IPv4 only); the `default` row is the gateway.
+- `lsof -iTCP -sTCP:LISTEN -P -n`: every program **listening** for TCP connections, with its port. `lsof` = "list open files"; `-iTCP` = TCP network connections, `-sTCP:LISTEN` = only listening ones, `-P` = port numbers not names, `-n` = IPs not names.
 
-**How to read the output (write this as your "interpretation"):**
+**How to read the output (your "interpretation"), using your own Mac's output:**
 ```text
-$ ip a
-1: lo: <LOOPBACK,UP,LOWER_UP> ...
-    inet 127.0.0.1/8 scope host lo
-2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 ...
-    inet 192.168.1.25/24 brd 192.168.1.255 scope global dynamic eth0
+$ ipconfig getifaddr en0
+100.128.161.247
+$ ifconfig en0
+	inet 100.128.161.247 netmask 0xfffff000 broadcast 100.128.175.255
+	status: active
+$ ipconfig getoption en0 subnet_mask
+255.255.240.0
 ```
-- `eth0` = the network card; `UP` = it is switched on. `lo` = loopback (the machine talking to itself, 127.0.0.1).
-- `inet 192.168.1.25/24` → **IP address** = 192.168.1.25; **/24 prefix** = subnet mask 255.255.255.0, so the first 24 bits (192.168.1) are the **network part**. Network = 192.168.1.0/24 → 254 usable host addresses (.1 to .254).
-- `brd 192.168.1.255` = broadcast address (sends to every host in the subnet). `dynamic` = address came from DHCP (Dynamic Host Configuration Protocol).
+- **IP address** = 100.128.161.247. `status: active` = the Wi-Fi card is connected.
+- **Subnet**: netmask `0xfffff000` = 255.255.240.0 = **/20** (20 network bits). So the network is **100.128.160.0/20**: 2^12 − 2 = **4,094 usable host addresses**. `broadcast 100.128.175.255` is the last address of that range (it sends to every host in the subnet).
 
 ```text
-$ ip route
-default via 192.168.1.1 dev eth0 proto dhcp metric 100
-192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.25
+$ route -n get default
+    gateway: 100.128.160.1
+  interface: en0
+$ netstat -rn -f inet
+Destination        Gateway            Flags     Netif
+default            100.128.160.1      UGScg     en0
 ```
-- `default via 192.168.1.1` → **default gateway** = 192.168.1.1 (the router). Any traffic not for our own subnet is sent there.
-- Second line: hosts in 192.168.1.0/24 are reached **directly** on eth0, no router needed.
+- **Default gateway** = 100.128.160.1 (the router): anything not inside our own subnet is sent there. `UG` flags = the route is Up and goes through a Gateway.
 
 ```text
-$ sudo ss -tulpn
-Netid State   Local Address:Port   Peer Address:Port  Process
-tcp   LISTEN  0.0.0.0:22           0.0.0.0:*          users:(("sshd",pid=812,fd=3))
-tcp   LISTEN  127.0.0.1:5432       0.0.0.0:*          users:(("postgres",pid=990,fd=5))
-udp   UNCONN  127.0.0.53%lo:53     0.0.0.0:*          users:(("systemd-resolve",pid=601,fd=12))
+$ lsof -iTCP -sTCP:LISTEN -P -n
+COMMAND     PID  USER  ... NAME
+ControlCe   608  vansh ... TCP *:7000 (LISTEN)
+ControlCe   608  vansh ... TCP *:5000 (LISTEN)
 ```
-- Flags: `-t` TCP, `-u` UDP, `-l` only listening sockets, `-p` show process name/PID (needs `sudo`), `-n` show numbers (port 22) not names (ssh).
-- `0.0.0.0:22` → SSH (Secure Shell) is listening on **all** interfaces, so other machines can connect. `127.0.0.1:5432` → PostgreSQL accepts **local-only** connections. `udp ... :53` → local DNS resolver.
+- `*:5000` / `*:7000` = ControlCenter (macOS's AirPlay Receiver) is listening on ports 5000 and 7000 on **all** interfaces (`*` = 0.0.0.0, reachable from other machines). A program shown as `127.0.0.1:PORT` would be **local-only**.
 
-**Verify:** `ip a` shows an `inet x.x.x.x/NN` line on your main interface; `ip route` shows exactly one `default via …` line; `ss -tulpn` shows `LISTEN` rows.
-(Mac: `ifconfig`, `netstat -rn`, `lsof -iTCP -sTCP:LISTEN -n -P`.)
+**Verify:** you see an `inet x.x.x.x netmask …` line, exactly one `default` route with a gateway, and `(LISTEN)` rows in `lsof`.
 
-**🧠 In simple words:** `ip a` tells you "who am I on the network" (your IP and how big your subnet is), `ip route` tells you "where do I send traffic that is not local" (the default gateway), and `ss -tulpn` tells you "which programs are waiting for connections, on which ports". These three are the first things you check on any server. In short: **ip a = my address + subnet, ip route = my gateway, ss -tulpn = my open ports.**
+*(Linux version, if the exam asks for Linux: `ip a` (IP + `/prefix`) · `ip route` (`default via <gateway>`) · `sudo ss -tulpn` (listening TCP/UDP ports + process).)*
+
+**🧠 In simple words:** `ipconfig`/`ifconfig` tell you "who am I on the network" (your IP and how big your subnet is), `route -n get default` tells you "where do I send traffic that isn't local" (the gateway), and `lsof … LISTEN` tells you "which programs are waiting for connections, on which ports". In short: **ifconfig = my address + subnet, route get default = my gateway, lsof LISTEN = my open ports.**
 
 ---
 
-## Lab 2 · Troubleshoot a web service with ping, ss and curl (reachability vs closed port vs HTTP error)
+## Lab 2 · Troubleshoot a web service with ping, a port check and curl (reachability vs closed port vs HTTP error)
 
-**Answer (what to write in the exam):**
+**Answer (macOS):**
 ```bash
-# Setup: a simple web server on the target machine (192.168.1.50), port 8080
-python3 -m http.server 8080 &
-
-# Step 1 – Is the host reachable at all? (network layer)
-ping -c 4 192.168.1.50
-# Step 2 – Is anything listening on the port? (run ON the server)
-sudo ss -tulpn | grep :8080
-# Step 3 – Can I connect, and what HTTP status comes back? (application layer)
-curl -v http://192.168.1.50:8080/
-curl -I http://192.168.1.50:8080/
-curl -s -o /dev/null -w "%{http_code}\n" http://192.168.1.50:8080/missing.html
-
-# Simulate the 3 failures:
-#  a) wrong/unreachable IP:     ping -c 4 192.168.1.99
-#  b) closed port:              kill %1   (stop the server), then curl again
-#  c) HTTP error:               curl -I http://192.168.1.50:8080/missing.html  → 404
+python3 -m http.server 9090 &
+ping -c 4 127.0.0.1
+lsof -nP -iTCP:9090 -sTCP:LISTEN
+nc -zv 127.0.0.1 9090
+curl -v http://localhost:9090/
+curl -I http://localhost:9090/
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9090/missing.html
 ```
+**Simulate the three failures:**
+```bash
+ping -c 4 -t 5 192.0.2.1
+kill %1
+nc -zv 127.0.0.1 9090
+curl http://localhost:9090/
+```
+(and the HTTP error is the `missing.html` line above: `404`). Use the server machine's IP instead of `127.0.0.1`/`localhost` when testing another computer.
+
+**What each line does:**
+- `python3 -m http.server 9090 &`: starts a tiny web server on port 9090 in the background (`&`), so there is something to test. (Not 8080: on your Mac that port is taken by your other cluster.)
+- `ping -c 4 <ip>`: sends 4 ICMP (Internet Control Message Protocol) echo requests (`-c` = count). Read `4 packets received, 0.0% packet loss`.
+- `lsof -nP -iTCP:9090 -sTCP:LISTEN`: is any program listening on port 9090? It shows `Python … TCP *:9090 (LISTEN)`. (The Mac's version of `ss -tulpn | grep :9090`.)
+- `nc -zv 127.0.0.1 9090`: `nc` (netcat) tries to open a TCP connection only (`-z` = don't send data, `-v` = say what happened): `Connection to 127.0.0.1 port 9090 … succeeded!`.
+- `curl -v URL`: verbose: shows `Connected to … port 9090` (TCP worked), the request, and the response status.
+- `curl -I URL`: only the response headers; the first line is the status (`HTTP/1.0 200 OK`).
+- `curl -s -o /dev/null -w "%{http_code}\n" URL`: prints only the status number (here `404`).
+- `ping -c 4 -t 5 192.0.2.1`: pings an address that doesn't exist (`-t 5` = give up after 5 seconds) → `100.0% packet loss`.
+- `kill %1`: stops the background server (`%1` = background job number 1), so the port is now closed.
 
 **Decision table (the key part of the answer):**
 
-| What you see | Diagnosis | Where the problem is |
+| What you see | Diagnosis | Layer |
 |---|---|---|
-| `ping`: `100% packet loss` or `Destination Host Unreachable`; `curl`: `Connection timed out` / `No route to host` | **Reachability problem** (host down, wrong IP, bad route, firewall dropping packets) | Network (IP/routing) |
-| `ping` OK (`0% packet loss`), but `curl`: `Failed to connect … Connection refused`, and `ss` shows **nothing** `LISTEN` on :8080 | **Closed port** (service stopped / crashed / listening on a different port or only on 127.0.0.1) | Transport (TCP port) |
-| `curl` connects (`* Connected to 192.168.1.50 port 8080`) but status is **4xx** (e.g. 404 Not Found, 403 Forbidden) or **5xx** (500 Internal Server Error, 503 Service Unavailable) | **HTTP-level problem** (wrong path, permissions, app bug, backend down) | Application (HTTP) |
-| `curl` gets `HTTP/1.0 200 OK` | Service is healthy | none |
+| `ping`: `100.0% packet loss`; `curl`: `timed out` / `No route to host` | **Reachability problem** (host down, wrong IP, bad route, firewall dropping packets) | Network (IP) |
+| `ping` OK, but `nc`: `Connection refused`, `curl: (7) Failed to connect … Couldn't connect to server`, and `lsof` shows **nothing** on the port | **Closed port** (service stopped/crashed, wrong port, or listening only on 127.0.0.1) | Transport (TCP port) |
+| `curl` connects but the status is **4xx** (404 Not Found, 403 Forbidden) or **5xx** (500, 503) | **HTTP-level problem** (wrong path, permissions, app bug) | Application (HTTP) |
+| `curl -I` → `HTTP/1.0 200 OK` | Healthy | none |
 
-**What each line does:**
-- `python3 -m http.server 8080 &`: starts a tiny web server on port 8080 in the background (`&`), so we have something to test.
-- `ping -c 4 <ip>`: sends 4 ICMP echo requests (`-c` = count; without it Linux pings forever). Read `4 received, 0% packet loss` and `time=… ms`.
-- `ss -tulpn | grep :8080`: shows if a process is in `LISTEN` state on port 8080 (`grep` filters the line).
-- `curl -v URL`: verbose; shows each step: DNS lookup, `Connected to … port 8080` (TCP worked), the request sent (`>`), and the response status (`< HTTP/1.0 200 OK`).
-- `curl -I URL`: sends a HEAD request, prints **only the response headers** (first line = status code).
-- `curl -s -o /dev/null -w "%{http_code}\n"`: silent, throws the body away, prints just the status number (e.g. `404`).
+**Verify (tested on your Mac):** healthy → `0.0% packet loss`, `Python … TCP *:9090 (LISTEN)`, `nc … succeeded!`, `HTTP/1.0 200 OK`; missing page → `404`; after `kill %1` → `Connection refused` and `curl: (7) … Couldn't connect to server`; bad IP → `100.0% packet loss`.
 
-**Verify:** healthy case → `ping` shows `0% packet loss`, `ss` shows `LISTEN … :8080 … python3`, `curl -I` shows `HTTP/1.0 200 OK`. Note: some networks block ICMP, so a failed `ping` with a working `curl` means "ping blocked", not "host down".
+*(Linux version, if the exam asks for Linux: same `ping` / `curl`, but `sudo ss -tulpn | grep :9090` instead of `lsof`.)*
 
-**🧠 In simple words:** you test from the bottom up: first "can I reach the machine?" (ping), then "is the program actually listening on that port?" (ss + curl connect), then "does the program answer correctly?" (HTTP status code). Each failure type gives a different message, so the first step that fails tells you the layer to fix. In short: **ping fails = network, connection refused = closed port, 4xx/5xx = the web app itself.**
+**🧠 In simple words:** you test from the bottom up: first "can I reach the machine?" (ping), then "is a program actually listening on that port?" (lsof / nc), then "does the program answer correctly?" (curl's status code). The first step that fails tells you which layer is broken. In short: **ping fails = network, connection refused = closed port, 4xx/5xx = the web app itself.**
 
 ---
 

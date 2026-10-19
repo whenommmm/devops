@@ -132,9 +132,9 @@ check_disk() {
 check_memory() {
   header "Memory"
   if command -v free > /dev/null; then
-    free -h                               # Linux
+    free -h                               # Linux has 'free'
   else
-    top -l 1 | grep PhysMem               # macOS has no 'free'
+    top -l 1 | grep PhysMem               # macOS: memory summary line
   fi
 }
 
@@ -160,10 +160,10 @@ exit "$STATUS"
 - `while read -r fs size used avail pct mount`: **loop** that splits each df line into named variables.
 - `${pct%\%}`: strip the trailing `%` from `85%` so `-ge` (greater or equal) can compare numbers.
 - `done < <(…)`: feed df into the loop without a pipe, so `STATUS=2` set inside the loop is still visible after it.
-- `free -h`: RAM (Random Access Memory) total/used/free; `uptime`: how long the system has run + load average (1, 5, 15 min).
+- `top -l 1 | grep PhysMem`: on macOS, takes one snapshot of `top` (`-l 1`) and keeps the memory line: RAM (Random Access Memory) used and unused. On Linux the script uses `free -h` instead. `uptime`: how long the system has run + load average (1, 5, 15 min).
 - `for check in …; do $check; done`: **loop** that calls every check function in turn; `exit "$STATUS"` lets cron or CI react to warnings.
 
-**Verify:** `./health.sh` → `OK / is 26% full (/dev/sda1)`, a `free -h` table (`Mem: 7.7Gi 2.1Gi …`), an `uptime` line, `RESULT: HEALTHY`; `echo $?` → `0`. `./health.sh 1` → `WARNING …`, `RESULT: WARNING`, exit `2`.
-(Mac: no `free`; the script falls back to `top -l 1 | grep PhysMem`, or use `vm_stat`.)
+**Verify (on your Mac):** `chmod +x health.sh && ./health.sh` → `OK  / is 27% full (/dev/disk3s1s1)`, `WARNING  /System/Volumes/Data is 93% full (/dev/disk3s5)` (your data disk really is 93% full, so with the default 80% you get a warning), a `PhysMem: 15G used (…), 65M unused.` line, an `uptime` line (`up 20 days …, load averages: …`), then `RESULT: WARNING`; `echo $?` → `2`. `./health.sh 95` → all `OK`, `RESULT: HEALTHY`, `echo $?` → `0`. `./health.sh abc` → the usage message, exit `1`.
+*(More memory detail on macOS: `vm_stat` (pages free/active) or `sysctl -n hw.memsize` (total RAM in bytes). On Linux: `free -h`.)*
 
 **🧠 In simple words:** The script keeps its settings in variables, puts each health check (disk, memory, uptime) in its own function, loops over the disks to compare each one against a threshold, and loops over the functions to run them all. It prints a clear report and exits 0 when healthy or 2 when a disk is too full, so it can be reused from cron or a pipeline. In short: variables + functions + loops + if, producing a disk/memory/uptime report with a meaningful exit code.

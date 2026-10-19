@@ -2,6 +2,10 @@
 
 *Solve them first in [LAB_QUESTIONS.md](LAB_QUESTIONS.md). Each answer: the commands/config to write, what each line does, how to verify, and a plain summary.*
 
+> **Running these on your Mac:** Linux-only labs (Session 2 users/groups and services, Session 3 memory, Session 4 networking) use **macOS commands**, with the Linux version in a one-line note under each in case the exam asks for Linux. Everything else (Docker, Kubernetes, Helm, Git, Terraform, GitHub Actions) is identical on Mac and Linux.
+>
+> ⚠️ **zsh tip, do this once:** `echo "setopt interactivecomments" >> ~/.zshrc && source ~/.zshrc`. Without it, your terminal treats `# comments` at the end of a pasted line as extra arguments, which can break commands (e.g. `rm … # delete` would try to delete files named `#` and `delete`).
+
 
 ## Session 1 · DevOps intro & roadmap
 
@@ -138,66 +142,87 @@ rm -r config_backup                            # DELETE a folder and its content
 **🧠 In simple words:** We build a small project tree with one command, put a few sample files in it, and then use the core file commands: `ls` to see, `cp` to duplicate, `mv` to relocate, `grep`/`find` to search by content or by name, and `rm` to remove. In short: mkdir → touch/echo → ls → cp → mv → grep/find → rm.
 
 ### Lab 2 · Create user examuser + group devops, add the user to the group, set ownership and permissions on a project directory
-**Answer (what to write in the exam):**
+**Answer (macOS):**
 ```bash
-sudo groupadd devops                            # create the group
-sudo useradd -m -s /bin/bash examuser           # create user with home dir + bash shell
-sudo passwd examuser                            # set password interactively (never hard-code it)
-sudo usermod -aG devops examuser                # ADD user to devops (keep other groups)
-id examuser                                     # check membership
-sudo mkdir -p /opt/project
-sudo chown -R examuser:devops /opt/project      # owner = examuser, group = devops
-sudo chmod -R 770 /opt/project                  # rwx owner, rwx group, nothing for others
-sudo chmod g+s /opt/project                     # new files inherit group devops
-ls -ld /opt/project
-sudo -u examuser touch /opt/project/test.txt    # test: examuser can write
+sudo dseditgroup -o create devops
+sudo sysadminctl -addUser examuser -fullName "Exam User" -password -
+sudo dseditgroup -o edit -a examuser -t user devops
+id examuser
+dseditgroup -o checkmember -m examuser devops
+sudo mkdir -p /Users/Shared/project
+sudo chown -R examuser:devops /Users/Shared/project
+sudo chmod -R 770 /Users/Shared/project
+ls -ld /Users/Shared/project
+sudo -u examuser touch /Users/Shared/project/test.txt
 ```
 **What each line does:**
-- `groupadd devops`: creates a new group (stored in `/etc/group`).
-- `useradd -m -s /bin/bash examuser`: `-m` creates `/home/examuser`, `-s` sets the login shell (stored in `/etc/passwd`).
-- `passwd examuser`: prompts for a password, so it is never written into a script.
-- `usermod -aG devops examuser`: `-G` sets supplementary groups, `-a` = append. Without `-a` the user is removed from every other group.
-- `chown -R user:group dir`: change owner and group, `-R` = for everything inside too.
-- `chmod 770`: digits are owner/group/others; r=4, w=2, x=1, so 7 = rwx and 0 = no access. On a directory, x means "can enter it".
-- `chmod g+s`: setgid bit on a directory, so files created inside belong to group `devops` automatically.
-- `sudo -u examuser touch ...`: run a command as examuser to prove the permissions work.
+- `dseditgroup -o create devops`: creates a group called `devops` (`-o` = operation). macOS keeps users and groups in its Directory Service, not in `/etc/group`.
+- `sysadminctl -addUser examuser -fullName "Exam User" -password -`: creates the user with a home folder. `-password -` (a dash) makes it **ask** you for the password, so it is never written in the command.
+- `dseditgroup -o edit -a examuser -t user devops`: **adds** (`-a`) the user (`-t user` = it's a user, not a group) to `devops`.
+- `id examuser`: shows the user's ID and every group it belongs to; `devops` should be in the list.
+- `dseditgroup -o checkmember -m examuser devops`: asks directly "is examuser in devops?" and prints `yes examuser is a member of devops`.
+- `mkdir -p /Users/Shared/project`: a folder every account can reach (your own home folder is private to you).
+- `chown -R examuser:devops …`: owner = examuser, group = devops; `-R` = everything inside too.
+- `chmod -R 770 …`: owner rwx (7), group rwx (7), others nothing (0). r=4, w=2, x=1; on a folder, x means "can enter it".
+- `sudo -u examuser touch …`: runs one command **as examuser** to prove the permissions work.
 
-**Verify:** `id examuser` → `uid=1001(examuser) gid=1001(examuser) groups=1001(examuser),1002(devops)`; `ls -ld /opt/project` → `drwxrws--- 2 examuser devops ... /opt/project`.
-(Mac: there is no `useradd`/`groupadd`; practise inside a Linux VM or `docker run -it --rm ubuntu bash`, where you are root so drop `sudo`.)
+**Verify:** `ls -ld /Users/Shared/project` → `drwxrwx---  … examuser  devops … /Users/Shared/project`; the `touch` gives no error; `ls -l /Users/Shared/project` shows `test.txt` owned by examuser.
 
-**🧠 In simple words:** We create a team group and a user, put the user in the group, and hand the project folder to that user and group. Permissions 770 let the owner and the team read, write and enter the folder while everyone else is locked out, and the setgid bit keeps new files in the team's group. In short: groupadd → useradd → usermod -aG → chown → chmod.
-
-### Lab 3 · Check a Linux service's status, read its logs, and diagnose a simulated failure
-**Service used:** nginx (any service works the same way: `ssh`, `cron`, `docker`).
-**Answer (what to write in the exam):**
+**Clean up afterwards** (it is a real login account on your Mac):
 ```bash
-systemctl status nginx --no-pager                  # 1. state: active (running)?
-echo "broken_line;" | sudo tee /etc/nginx/conf.d/bad.conf   # 2. SIMULATE: bad config
-sudo systemctl restart nginx                       #    -> "Job for nginx.service failed"
-systemctl status nginx --no-pager                  # 3. Active: failed (Result: exit-code)
-journalctl -u nginx -n 30 --no-pager               # 4. last 30 log lines of this service
-journalctl -xeu nginx --since "10 min ago"         #    jump to the end, with explanations
-sudo nginx -t                                      # 5. nginx's own config test -> names file + line
-sudo tail -n 20 /var/log/nginx/error.log           #    the app's own log file
-sudo rm /etc/nginx/conf.d/bad.conf                 # 6. FIX the cause
-sudo systemctl restart nginx
-systemctl is-active nginx                          # 7. -> active
-ss -tulpn | grep ':80'                             #    nginx is listening on port 80 again
-sudo systemctl enable nginx                        #    start automatically at boot
+sudo rm -rf /Users/Shared/project
+sudo sysadminctl -deleteUser examuser
+sudo dseditgroup -o delete devops
+```
+*(Linux version, if the exam asks for Linux: `sudo groupadd devops` · `sudo useradd -m -s /bin/bash examuser` · `sudo passwd examuser` · `sudo usermod -aG devops examuser` · then the same `chown` / `chmod 770` / `id`.)*
+
+**🧠 In simple words:** We create a team group and a user, put the user into the group, and hand a shared project folder to that user and group. Permission 770 lets the owner and the team read, write and enter the folder while everyone else is locked out, and running `touch` as examuser proves it works. In short: create group → create user → add user to group → chown → chmod → test.
+
+### Lab 3 · Check a service's status, read its logs, and diagnose a simulated failure
+**Service used:** nginx installed with Homebrew. On macOS, background services are run by **launchd**, and `brew services` is the easy front end to it (the Mac's version of `systemctl`).
+**Answer (macOS):**
+```bash
+brew install nginx
+sed -i '' 's/listen[[:space:]]*8080;/listen 8081;/' /opt/homebrew/etc/nginx/nginx.conf
+brew services start nginx
+brew services list
+curl -I http://localhost:8081
+echo "broken_line;" > /opt/homebrew/etc/nginx/servers/bad.conf
+brew services restart nginx
+brew services list
+nginx -t
+tail -n 20 /opt/homebrew/var/log/nginx/error.log
+launchctl print gui/$(id -u)/homebrew.mxcl.nginx | grep -E "state|last exit"
+rm /opt/homebrew/etc/nginx/servers/bad.conf
+nginx -t
+brew services restart nginx
+lsof -nP -iTCP:8081 -sTCP:LISTEN
+curl -I http://localhost:8081
 ```
 **What each line does:**
-- `systemctl status <svc>`: shows Active state (active/inactive/failed), main PID (process ID) and the latest log lines.
-- `sudo tee file`: writes text into a root-owned file (plain `>` would fail because the redirect is not run by sudo).
-- `journalctl -u nginx`: logs for one systemd unit; `-n 30` last 30 lines, `-f` follow live, `--since` time filter, `-x` add explanations, `-e` jump to the end, `--no-pager` print without paging (`-xeu` is exactly what systemd suggests after a failed restart).
-- `nginx -t`: tests config syntax; here it prints `unknown directive "broken_line" in /etc/nginx/conf.d/bad.conf:1`.
-- `systemctl restart / is-active / enable`: restart the service, print its one-word state, start it at boot.
-- `ss -tulpn`: lists listening sockets: TCP (Transmission Control Protocol) `-t`, UDP (User Datagram Protocol) `-u`, listening `-l`, owning process `-p`, numeric ports `-n`.
+- `brew install nginx`: installs the nginx web server with Homebrew.
+- `sed -i '' 's/…8080;/listen 8081;/' …nginx.conf`: Homebrew's nginx listens on 8080, which your other cluster already uses, so this switches it to 8081. (`sed -i ''` = edit the file in place; the empty `''` is required on macOS.)
+- `brew services start nginx`: starts nginx in the background through launchd (the Mac's service manager) and keeps it starting at login.
+- `brew services list`: one line per service with its **Status**: `started` = running, `error` (with an exit code) = it failed, `none` = not running.
+- `curl -I http://localhost:8081`: asks for only the response headers; a healthy server answers `HTTP/1.1 200 OK` and `Server: nginx/…`.
+- `echo "broken_line;" > …/servers/bad.conf`: **simulates the problem**: nginx reads every file in `servers/`, and this line is not valid nginx config.
+- `brew services restart nginx` then `brew services list`: the restart fails, and the Status column shows `error`.
+- `nginx -t`: nginx's own config test. It names the exact file and line: `unknown directive "broken_line" in /opt/homebrew/etc/nginx/servers/bad.conf:1`.
+- `tail -n 20 …/error.log`: the last 20 lines of nginx's own log file; the same `[emerg] unknown directive` line appears there. (`tail -f` follows it live.)
+- `launchctl print gui/$(id -u)/homebrew.mxcl.nginx`: asks launchd directly about the service (`homebrew.mxcl.nginx` is its name); `state` and `last exit code` show whether it is running or why it stopped.
+- `rm …/bad.conf` + `nginx -t`: **fix** the cause, then the test says `syntax is ok` and `test is successful`.
+- `brew services restart nginx`: start it again.
+- `lsof -nP -iTCP:8081 -sTCP:LISTEN`: shows the program listening on port 8081 (nginx). This is the Mac's version of `ss -tulpn`.
 
-**Diagnosis notes to write:** Symptom: site down, `status` = failed. Evidence: journal shows `[emerg] unknown directive "broken_line"`. Cause: bad config line. Fix: remove the line, `nginx -t` OK, restart. Proof: `is-active` = active, port 80 listening.
-**Verify:** `systemctl status nginx` → `Active: active (running)`; `curl -I http://localhost` → `HTTP/1.1 200 OK`.
-(Mac: no systemd; use `brew services list`, `launchctl list | grep <name>` and `log show --last 10m`.)
+**Diagnosis notes to write:** Symptom: the site is down, and `brew services list` shows `error`. Evidence: `nginx -t` and `error.log` say `unknown directive "broken_line"`. Cause: a bad config line. Fix: remove it, `nginx -t` passes, restart. Proof: `brew services list` = `started`, port 8081 listening, `curl -I` = `200 OK`.
 
-**🧠 In simple words:** systemd runs services, `systemctl` asks it whether a service is running and starts/stops it, and `journalctl` shows what the service logged. We break nginx on purpose with a bad config line, see it fail in `status`, read the exact error in the logs, confirm it with `nginx -t`, fix it and prove it is back. In short: status → logs → test config → fix → restart → verify.
+**Verify:** `brew services list` → `nginx  started`; `curl -I http://localhost:8081` → `HTTP/1.1 200 OK`.
+
+**Clean up afterwards:** `brew services stop nginx` (and `brew uninstall nginx` if you don't need it).
+
+*(Linux version, if the exam asks for Linux: `systemctl status nginx` · `sudo systemctl restart nginx` · `journalctl -u nginx -n 30` · `sudo nginx -t` · `/var/log/nginx/error.log` · `ss -tulpn | grep :80` · `sudo systemctl enable nginx`.)*
+
+**🧠 In simple words:** On a Mac, launchd runs background services and `brew services` lets you start, stop and check them, like `systemctl` on Linux. We break nginx on purpose with a bad config line, see `error` in the service list, read the exact reason with `nginx -t` and the log file, fix it, and prove it is back with `lsof` and `curl`. In short: status → logs → test config → fix → restart → verify.
 
 ---
 
@@ -335,9 +360,9 @@ check_disk() {
 check_memory() {
   header "Memory"
   if command -v free > /dev/null; then
-    free -h                               # Linux
+    free -h                               # Linux has 'free'
   else
-    top -l 1 | grep PhysMem               # macOS has no 'free'
+    top -l 1 | grep PhysMem               # macOS: memory summary line
   fi
 }
 
@@ -363,11 +388,11 @@ exit "$STATUS"
 - `while read -r fs size used avail pct mount`: **loop** that splits each df line into named variables.
 - `${pct%\%}`: strip the trailing `%` from `85%` so `-ge` (greater or equal) can compare numbers.
 - `done < <(…)`: feed df into the loop without a pipe, so `STATUS=2` set inside the loop is still visible after it.
-- `free -h`: RAM (Random Access Memory) total/used/free; `uptime`: how long the system has run + load average (1, 5, 15 min).
+- `top -l 1 | grep PhysMem`: on macOS, takes one snapshot of `top` (`-l 1`) and keeps the memory line: RAM (Random Access Memory) used and unused. On Linux the script uses `free -h` instead. `uptime`: how long the system has run + load average (1, 5, 15 min).
 - `for check in …; do $check; done`: **loop** that calls every check function in turn; `exit "$STATUS"` lets cron or CI react to warnings.
 
-**Verify:** `./health.sh` → `OK / is 26% full (/dev/sda1)`, a `free -h` table (`Mem: 7.7Gi 2.1Gi …`), an `uptime` line, `RESULT: HEALTHY`; `echo $?` → `0`. `./health.sh 1` → `WARNING …`, `RESULT: WARNING`, exit `2`.
-(Mac: no `free`; the script falls back to `top -l 1 | grep PhysMem`, or use `vm_stat`.)
+**Verify (on your Mac):** `chmod +x health.sh && ./health.sh` → `OK  / is 27% full (/dev/disk3s1s1)`, `WARNING  /System/Volumes/Data is 93% full (/dev/disk3s5)` (your data disk really is 93% full, so with the default 80% you get a warning), a `PhysMem: 15G used (…), 65M unused.` line, an `uptime` line (`up 20 days …, load averages: …`), then `RESULT: WARNING`; `echo $?` → `2`. `./health.sh 95` → all `OK`, `RESULT: HEALTHY`, `echo $?` → `0`. `./health.sh abc` → the usage message, exit `1`.
+*(More memory detail on macOS: `vm_stat` (pages free/active) or `sysctl -n hw.memsize` (total RAM in bytes). On Linux: `free -h`.)*
 
 **🧠 In simple words:** The script keeps its settings in variables, puts each health check (disk, memory, uptime) in its own function, loops over the disks to compare each one against a threshold, and loops over the functions to run them all. It prints a clear report and exits 0 when healthy or 2 when a disk is too full, so it can be reused from cron or a pipeline. In short: variables + functions + loops + if, producing a disk/memory/uptime report with a meaningful exit code.
 
@@ -381,94 +406,108 @@ Acronyms used: IP = Internet Protocol · DNS = Domain Name System (turns names i
 
 ### Lab 1 · Show the IP address, subnet, default route and listening ports
 
-**Answer (what to write in the exam):**
+**Answer (macOS):**
 ```bash
-ip addr show            # short form: ip a   → IP address + subnet prefix of each interface
-ip -4 addr show eth0    # only the IPv4 address of one interface (name may be ens33 / enp0s3)
-ip route show           # routing table; the "default" line is the default gateway
-ip route show default   # only the default route
-sudo ss -tulpn          # all listening TCP/UDP ports + which program owns each one
+ipconfig getifaddr en0
+ifconfig en0
+ipconfig getoption en0 subnet_mask
+route -n get default
+netstat -rn -f inet
+lsof -iTCP -sTCP:LISTEN -P -n
 ```
+**What each line does:**
+- `ipconfig getifaddr en0`: prints just your IP address on `en0` (on a MacBook, `en0` = Wi-Fi).
+- `ifconfig en0`: full details of that network card: IP address, netmask, broadcast address, `status: active`.
+- `ipconfig getoption en0 subnet_mask`: prints the subnet mask in dotted form.
+- `route -n get default`: shows the **default gateway** (the router) and which card it uses; `-n` = show numbers, don't look up names.
+- `netstat -rn -f inet`: the whole IPv4 routing table (`-r` = routes, `-n` = numbers, `-f inet` = IPv4 only); the `default` row is the gateway.
+- `lsof -iTCP -sTCP:LISTEN -P -n`: every program **listening** for TCP connections, with its port. `lsof` = "list open files"; `-iTCP` = TCP network connections, `-sTCP:LISTEN` = only listening ones, `-P` = port numbers not names, `-n` = IPs not names.
 
-**How to read the output (write this as your "interpretation"):**
+**How to read the output (your "interpretation"), using your own Mac's output:**
 ```text
-$ ip a
-1: lo: <LOOPBACK,UP,LOWER_UP> ...
-    inet 127.0.0.1/8 scope host lo
-2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 ...
-    inet 192.168.1.25/24 brd 192.168.1.255 scope global dynamic eth0
+$ ipconfig getifaddr en0
+100.128.161.247
+$ ifconfig en0
+	inet 100.128.161.247 netmask 0xfffff000 broadcast 100.128.175.255
+	status: active
+$ ipconfig getoption en0 subnet_mask
+255.255.240.0
 ```
-- `eth0` = the network card; `UP` = it is switched on. `lo` = loopback (the machine talking to itself, 127.0.0.1).
-- `inet 192.168.1.25/24` → **IP address** = 192.168.1.25; **/24 prefix** = subnet mask 255.255.255.0, so the first 24 bits (192.168.1) are the **network part**. Network = 192.168.1.0/24 → 254 usable host addresses (.1 to .254).
-- `brd 192.168.1.255` = broadcast address (sends to every host in the subnet). `dynamic` = address came from DHCP (Dynamic Host Configuration Protocol).
+- **IP address** = 100.128.161.247. `status: active` = the Wi-Fi card is connected.
+- **Subnet**: netmask `0xfffff000` = 255.255.240.0 = **/20** (20 network bits). So the network is **100.128.160.0/20**: 2^12 − 2 = **4,094 usable host addresses**. `broadcast 100.128.175.255` is the last address of that range (it sends to every host in the subnet).
 
 ```text
-$ ip route
-default via 192.168.1.1 dev eth0 proto dhcp metric 100
-192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.25
+$ route -n get default
+    gateway: 100.128.160.1
+  interface: en0
+$ netstat -rn -f inet
+Destination        Gateway            Flags     Netif
+default            100.128.160.1      UGScg     en0
 ```
-- `default via 192.168.1.1` → **default gateway** = 192.168.1.1 (the router). Any traffic not for our own subnet is sent there.
-- Second line: hosts in 192.168.1.0/24 are reached **directly** on eth0, no router needed.
+- **Default gateway** = 100.128.160.1 (the router): anything not inside our own subnet is sent there. `UG` flags = the route is Up and goes through a Gateway.
 
 ```text
-$ sudo ss -tulpn
-Netid State   Local Address:Port   Peer Address:Port  Process
-tcp   LISTEN  0.0.0.0:22           0.0.0.0:*          users:(("sshd",pid=812,fd=3))
-tcp   LISTEN  127.0.0.1:5432       0.0.0.0:*          users:(("postgres",pid=990,fd=5))
-udp   UNCONN  127.0.0.53%lo:53     0.0.0.0:*          users:(("systemd-resolve",pid=601,fd=12))
+$ lsof -iTCP -sTCP:LISTEN -P -n
+COMMAND     PID  USER  ... NAME
+ControlCe   608  vansh ... TCP *:7000 (LISTEN)
+ControlCe   608  vansh ... TCP *:5000 (LISTEN)
 ```
-- Flags: `-t` TCP, `-u` UDP, `-l` only listening sockets, `-p` show process name/PID (needs `sudo`), `-n` show numbers (port 22) not names (ssh).
-- `0.0.0.0:22` → SSH (Secure Shell) is listening on **all** interfaces, so other machines can connect. `127.0.0.1:5432` → PostgreSQL accepts **local-only** connections. `udp ... :53` → local DNS resolver.
+- `*:5000` / `*:7000` = ControlCenter (macOS's AirPlay Receiver) is listening on ports 5000 and 7000 on **all** interfaces (`*` = 0.0.0.0, reachable from other machines). A program shown as `127.0.0.1:PORT` would be **local-only**.
 
-**Verify:** `ip a` shows an `inet x.x.x.x/NN` line on your main interface; `ip route` shows exactly one `default via …` line; `ss -tulpn` shows `LISTEN` rows.
-(Mac: `ifconfig`, `netstat -rn`, `lsof -iTCP -sTCP:LISTEN -n -P`.)
+**Verify:** you see an `inet x.x.x.x netmask …` line, exactly one `default` route with a gateway, and `(LISTEN)` rows in `lsof`.
 
-**🧠 In simple words:** `ip a` tells you "who am I on the network" (your IP and how big your subnet is), `ip route` tells you "where do I send traffic that is not local" (the default gateway), and `ss -tulpn` tells you "which programs are waiting for connections, on which ports". These three are the first things you check on any server. In short: **ip a = my address + subnet, ip route = my gateway, ss -tulpn = my open ports.**
+*(Linux version, if the exam asks for Linux: `ip a` (IP + `/prefix`) · `ip route` (`default via <gateway>`) · `sudo ss -tulpn` (listening TCP/UDP ports + process).)*
+
+**🧠 In simple words:** `ipconfig`/`ifconfig` tell you "who am I on the network" (your IP and how big your subnet is), `route -n get default` tells you "where do I send traffic that isn't local" (the gateway), and `lsof … LISTEN` tells you "which programs are waiting for connections, on which ports". In short: **ifconfig = my address + subnet, route get default = my gateway, lsof LISTEN = my open ports.**
 
 ---
 
-### Lab 2 · Troubleshoot a web service with ping, ss and curl (reachability vs closed port vs HTTP error)
+### Lab 2 · Troubleshoot a web service with ping, a port check and curl (reachability vs closed port vs HTTP error)
 
-**Answer (what to write in the exam):**
+**Answer (macOS):**
 ```bash
-# Setup: a simple web server on the target machine (192.168.1.50), port 8080
-python3 -m http.server 8080 &
-
-# Step 1 – Is the host reachable at all? (network layer)
-ping -c 4 192.168.1.50
-# Step 2 – Is anything listening on the port? (run ON the server)
-sudo ss -tulpn | grep :8080
-# Step 3 – Can I connect, and what HTTP status comes back? (application layer)
-curl -v http://192.168.1.50:8080/
-curl -I http://192.168.1.50:8080/
-curl -s -o /dev/null -w "%{http_code}\n" http://192.168.1.50:8080/missing.html
-
-# Simulate the 3 failures:
-#  a) wrong/unreachable IP:     ping -c 4 192.168.1.99
-#  b) closed port:              kill %1   (stop the server), then curl again
-#  c) HTTP error:               curl -I http://192.168.1.50:8080/missing.html  → 404
+python3 -m http.server 9090 &
+ping -c 4 127.0.0.1
+lsof -nP -iTCP:9090 -sTCP:LISTEN
+nc -zv 127.0.0.1 9090
+curl -v http://localhost:9090/
+curl -I http://localhost:9090/
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9090/missing.html
 ```
+**Simulate the three failures:**
+```bash
+ping -c 4 -t 5 192.0.2.1
+kill %1
+nc -zv 127.0.0.1 9090
+curl http://localhost:9090/
+```
+(and the HTTP error is the `missing.html` line above: `404`). Use the server machine's IP instead of `127.0.0.1`/`localhost` when testing another computer.
+
+**What each line does:**
+- `python3 -m http.server 9090 &`: starts a tiny web server on port 9090 in the background (`&`), so there is something to test. (Not 8080: on your Mac that port is taken by your other cluster.)
+- `ping -c 4 <ip>`: sends 4 ICMP (Internet Control Message Protocol) echo requests (`-c` = count). Read `4 packets received, 0.0% packet loss`.
+- `lsof -nP -iTCP:9090 -sTCP:LISTEN`: is any program listening on port 9090? It shows `Python … TCP *:9090 (LISTEN)`. (The Mac's version of `ss -tulpn | grep :9090`.)
+- `nc -zv 127.0.0.1 9090`: `nc` (netcat) tries to open a TCP connection only (`-z` = don't send data, `-v` = say what happened): `Connection to 127.0.0.1 port 9090 … succeeded!`.
+- `curl -v URL`: verbose: shows `Connected to … port 9090` (TCP worked), the request, and the response status.
+- `curl -I URL`: only the response headers; the first line is the status (`HTTP/1.0 200 OK`).
+- `curl -s -o /dev/null -w "%{http_code}\n" URL`: prints only the status number (here `404`).
+- `ping -c 4 -t 5 192.0.2.1`: pings an address that doesn't exist (`-t 5` = give up after 5 seconds) → `100.0% packet loss`.
+- `kill %1`: stops the background server (`%1` = background job number 1), so the port is now closed.
 
 **Decision table (the key part of the answer):**
 
-| What you see | Diagnosis | Where the problem is |
+| What you see | Diagnosis | Layer |
 |---|---|---|
-| `ping`: `100% packet loss` or `Destination Host Unreachable`; `curl`: `Connection timed out` / `No route to host` | **Reachability problem** (host down, wrong IP, bad route, firewall dropping packets) | Network (IP/routing) |
-| `ping` OK (`0% packet loss`), but `curl`: `Failed to connect … Connection refused`, and `ss` shows **nothing** `LISTEN` on :8080 | **Closed port** (service stopped / crashed / listening on a different port or only on 127.0.0.1) | Transport (TCP port) |
-| `curl` connects (`* Connected to 192.168.1.50 port 8080`) but status is **4xx** (e.g. 404 Not Found, 403 Forbidden) or **5xx** (500 Internal Server Error, 503 Service Unavailable) | **HTTP-level problem** (wrong path, permissions, app bug, backend down) | Application (HTTP) |
-| `curl` gets `HTTP/1.0 200 OK` | Service is healthy | none |
+| `ping`: `100.0% packet loss`; `curl`: `timed out` / `No route to host` | **Reachability problem** (host down, wrong IP, bad route, firewall dropping packets) | Network (IP) |
+| `ping` OK, but `nc`: `Connection refused`, `curl: (7) Failed to connect … Couldn't connect to server`, and `lsof` shows **nothing** on the port | **Closed port** (service stopped/crashed, wrong port, or listening only on 127.0.0.1) | Transport (TCP port) |
+| `curl` connects but the status is **4xx** (404 Not Found, 403 Forbidden) or **5xx** (500, 503) | **HTTP-level problem** (wrong path, permissions, app bug) | Application (HTTP) |
+| `curl -I` → `HTTP/1.0 200 OK` | Healthy | none |
 
-**What each line does:**
-- `python3 -m http.server 8080 &`: starts a tiny web server on port 8080 in the background (`&`), so we have something to test.
-- `ping -c 4 <ip>`: sends 4 ICMP echo requests (`-c` = count; without it Linux pings forever). Read `4 received, 0% packet loss` and `time=… ms`.
-- `ss -tulpn | grep :8080`: shows if a process is in `LISTEN` state on port 8080 (`grep` filters the line).
-- `curl -v URL`: verbose; shows each step: DNS lookup, `Connected to … port 8080` (TCP worked), the request sent (`>`), and the response status (`< HTTP/1.0 200 OK`).
-- `curl -I URL`: sends a HEAD request, prints **only the response headers** (first line = status code).
-- `curl -s -o /dev/null -w "%{http_code}\n"`: silent, throws the body away, prints just the status number (e.g. `404`).
+**Verify (tested on your Mac):** healthy → `0.0% packet loss`, `Python … TCP *:9090 (LISTEN)`, `nc … succeeded!`, `HTTP/1.0 200 OK`; missing page → `404`; after `kill %1` → `Connection refused` and `curl: (7) … Couldn't connect to server`; bad IP → `100.0% packet loss`.
 
-**Verify:** healthy case → `ping` shows `0% packet loss`, `ss` shows `LISTEN … :8080 … python3`, `curl -I` shows `HTTP/1.0 200 OK`. Note: some networks block ICMP, so a failed `ping` with a working `curl` means "ping blocked", not "host down".
+*(Linux version, if the exam asks for Linux: same `ping` / `curl`, but `sudo ss -tulpn | grep :9090` instead of `lsof`.)*
 
-**🧠 In simple words:** you test from the bottom up: first "can I reach the machine?" (ping), then "is the program actually listening on that port?" (ss + curl connect), then "does the program answer correctly?" (HTTP status code). Each failure type gives a different message, so the first step that fails tells you the layer to fix. In short: **ping fails = network, connection refused = closed port, 4xx/5xx = the web app itself.**
+**🧠 In simple words:** you test from the bottom up: first "can I reach the machine?" (ping), then "is a program actually listening on that port?" (lsof / nc), then "does the program answer correctly?" (curl's status code). The first step that fails tells you which layer is broken. In short: **ping fails = network, connection refused = closed port, 4xx/5xx = the web app itself.**
 
 ---
 

@@ -1,4 +1,4 @@
-# Labs · Session 2 · Linux
+# Labs · Session 2 · Linux (answers use macOS commands)
 
 ## Lab 1 · Make a project folder (app, logs, config), then list, copy, move, search and delete files
 **Answer (what to write in the exam):**
@@ -33,63 +33,84 @@ rm -r config_backup                            # DELETE a folder and its content
 **🧠 In simple words:** We build a small project tree with one command, put a few sample files in it, and then use the core file commands: `ls` to see, `cp` to duplicate, `mv` to relocate, `grep`/`find` to search by content or by name, and `rm` to remove. In short: mkdir → touch/echo → ls → cp → mv → grep/find → rm.
 
 ## Lab 2 · Create user examuser + group devops, add the user to the group, set ownership and permissions on a project directory
-**Answer (what to write in the exam):**
+**Answer (macOS):**
 ```bash
-sudo groupadd devops                            # create the group
-sudo useradd -m -s /bin/bash examuser           # create user with home dir + bash shell
-sudo passwd examuser                            # set password interactively (never hard-code it)
-sudo usermod -aG devops examuser                # ADD user to devops (keep other groups)
-id examuser                                     # check membership
-sudo mkdir -p /opt/project
-sudo chown -R examuser:devops /opt/project      # owner = examuser, group = devops
-sudo chmod -R 770 /opt/project                  # rwx owner, rwx group, nothing for others
-sudo chmod g+s /opt/project                     # new files inherit group devops
-ls -ld /opt/project
-sudo -u examuser touch /opt/project/test.txt    # test: examuser can write
+sudo dseditgroup -o create devops
+sudo sysadminctl -addUser examuser -fullName "Exam User" -password -
+sudo dseditgroup -o edit -a examuser -t user devops
+id examuser
+dseditgroup -o checkmember -m examuser devops
+sudo mkdir -p /Users/Shared/project
+sudo chown -R examuser:devops /Users/Shared/project
+sudo chmod -R 770 /Users/Shared/project
+ls -ld /Users/Shared/project
+sudo -u examuser touch /Users/Shared/project/test.txt
 ```
 **What each line does:**
-- `groupadd devops`: creates a new group (stored in `/etc/group`).
-- `useradd -m -s /bin/bash examuser`: `-m` creates `/home/examuser`, `-s` sets the login shell (stored in `/etc/passwd`).
-- `passwd examuser`: prompts for a password, so it is never written into a script.
-- `usermod -aG devops examuser`: `-G` sets supplementary groups, `-a` = append. Without `-a` the user is removed from every other group.
-- `chown -R user:group dir`: change owner and group, `-R` = for everything inside too.
-- `chmod 770`: digits are owner/group/others; r=4, w=2, x=1, so 7 = rwx and 0 = no access. On a directory, x means "can enter it".
-- `chmod g+s`: setgid bit on a directory, so files created inside belong to group `devops` automatically.
-- `sudo -u examuser touch ...`: run a command as examuser to prove the permissions work.
+- `dseditgroup -o create devops`: creates a group called `devops` (`-o` = operation). macOS keeps users and groups in its Directory Service, not in `/etc/group`.
+- `sysadminctl -addUser examuser -fullName "Exam User" -password -`: creates the user with a home folder. `-password -` (a dash) makes it **ask** you for the password, so it is never written in the command.
+- `dseditgroup -o edit -a examuser -t user devops`: **adds** (`-a`) the user (`-t user` = it's a user, not a group) to `devops`.
+- `id examuser`: shows the user's ID and every group it belongs to; `devops` should be in the list.
+- `dseditgroup -o checkmember -m examuser devops`: asks directly "is examuser in devops?" and prints `yes examuser is a member of devops`.
+- `mkdir -p /Users/Shared/project`: a folder every account can reach (your own home folder is private to you).
+- `chown -R examuser:devops …`: owner = examuser, group = devops; `-R` = everything inside too.
+- `chmod -R 770 …`: owner rwx (7), group rwx (7), others nothing (0). r=4, w=2, x=1; on a folder, x means "can enter it".
+- `sudo -u examuser touch …`: runs one command **as examuser** to prove the permissions work.
 
-**Verify:** `id examuser` → `uid=1001(examuser) gid=1001(examuser) groups=1001(examuser),1002(devops)`; `ls -ld /opt/project` → `drwxrws--- 2 examuser devops ... /opt/project`.
-(Mac: there is no `useradd`/`groupadd`; practise inside a Linux VM or `docker run -it --rm ubuntu bash`, where you are root so drop `sudo`.)
+**Verify:** `ls -ld /Users/Shared/project` → `drwxrwx---  … examuser  devops … /Users/Shared/project`; the `touch` gives no error; `ls -l /Users/Shared/project` shows `test.txt` owned by examuser.
 
-**🧠 In simple words:** We create a team group and a user, put the user in the group, and hand the project folder to that user and group. Permissions 770 let the owner and the team read, write and enter the folder while everyone else is locked out, and the setgid bit keeps new files in the team's group. In short: groupadd → useradd → usermod -aG → chown → chmod.
-
-## Lab 3 · Check a Linux service's status, read its logs, and diagnose a simulated failure
-**Service used:** nginx (any service works the same way: `ssh`, `cron`, `docker`).
-**Answer (what to write in the exam):**
+**Clean up afterwards** (it is a real login account on your Mac):
 ```bash
-systemctl status nginx --no-pager                  # 1. state: active (running)?
-echo "broken_line;" | sudo tee /etc/nginx/conf.d/bad.conf   # 2. SIMULATE: bad config
-sudo systemctl restart nginx                       #    -> "Job for nginx.service failed"
-systemctl status nginx --no-pager                  # 3. Active: failed (Result: exit-code)
-journalctl -u nginx -n 30 --no-pager               # 4. last 30 log lines of this service
-journalctl -xeu nginx --since "10 min ago"         #    jump to the end, with explanations
-sudo nginx -t                                      # 5. nginx's own config test -> names file + line
-sudo tail -n 20 /var/log/nginx/error.log           #    the app's own log file
-sudo rm /etc/nginx/conf.d/bad.conf                 # 6. FIX the cause
-sudo systemctl restart nginx
-systemctl is-active nginx                          # 7. -> active
-ss -tulpn | grep ':80'                             #    nginx is listening on port 80 again
-sudo systemctl enable nginx                        #    start automatically at boot
+sudo rm -rf /Users/Shared/project
+sudo sysadminctl -deleteUser examuser
+sudo dseditgroup -o delete devops
+```
+*(Linux version, if the exam asks for Linux: `sudo groupadd devops` · `sudo useradd -m -s /bin/bash examuser` · `sudo passwd examuser` · `sudo usermod -aG devops examuser` · then the same `chown` / `chmod 770` / `id`.)*
+
+**🧠 In simple words:** We create a team group and a user, put the user into the group, and hand a shared project folder to that user and group. Permission 770 lets the owner and the team read, write and enter the folder while everyone else is locked out, and running `touch` as examuser proves it works. In short: create group → create user → add user to group → chown → chmod → test.
+
+## Lab 3 · Check a service's status, read its logs, and diagnose a simulated failure
+**Service used:** nginx installed with Homebrew. On macOS, background services are run by **launchd**, and `brew services` is the easy front end to it (the Mac's version of `systemctl`).
+**Answer (macOS):**
+```bash
+brew install nginx
+sed -i '' 's/listen[[:space:]]*8080;/listen 8081;/' /opt/homebrew/etc/nginx/nginx.conf
+brew services start nginx
+brew services list
+curl -I http://localhost:8081
+echo "broken_line;" > /opt/homebrew/etc/nginx/servers/bad.conf
+brew services restart nginx
+brew services list
+nginx -t
+tail -n 20 /opt/homebrew/var/log/nginx/error.log
+launchctl print gui/$(id -u)/homebrew.mxcl.nginx | grep -E "state|last exit"
+rm /opt/homebrew/etc/nginx/servers/bad.conf
+nginx -t
+brew services restart nginx
+lsof -nP -iTCP:8081 -sTCP:LISTEN
+curl -I http://localhost:8081
 ```
 **What each line does:**
-- `systemctl status <svc>`: shows Active state (active/inactive/failed), main PID (process ID) and the latest log lines.
-- `sudo tee file`: writes text into a root-owned file (plain `>` would fail because the redirect is not run by sudo).
-- `journalctl -u nginx`: logs for one systemd unit; `-n 30` last 30 lines, `-f` follow live, `--since` time filter, `-x` add explanations, `-e` jump to the end, `--no-pager` print without paging (`-xeu` is exactly what systemd suggests after a failed restart).
-- `nginx -t`: tests config syntax; here it prints `unknown directive "broken_line" in /etc/nginx/conf.d/bad.conf:1`.
-- `systemctl restart / is-active / enable`: restart the service, print its one-word state, start it at boot.
-- `ss -tulpn`: lists listening sockets: TCP (Transmission Control Protocol) `-t`, UDP (User Datagram Protocol) `-u`, listening `-l`, owning process `-p`, numeric ports `-n`.
+- `brew install nginx`: installs the nginx web server with Homebrew.
+- `sed -i '' 's/…8080;/listen 8081;/' …nginx.conf`: Homebrew's nginx listens on 8080, which your other cluster already uses, so this switches it to 8081. (`sed -i ''` = edit the file in place; the empty `''` is required on macOS.)
+- `brew services start nginx`: starts nginx in the background through launchd (the Mac's service manager) and keeps it starting at login.
+- `brew services list`: one line per service with its **Status**: `started` = running, `error` (with an exit code) = it failed, `none` = not running.
+- `curl -I http://localhost:8081`: asks for only the response headers; a healthy server answers `HTTP/1.1 200 OK` and `Server: nginx/…`.
+- `echo "broken_line;" > …/servers/bad.conf`: **simulates the problem**: nginx reads every file in `servers/`, and this line is not valid nginx config.
+- `brew services restart nginx` then `brew services list`: the restart fails, and the Status column shows `error`.
+- `nginx -t`: nginx's own config test. It names the exact file and line: `unknown directive "broken_line" in /opt/homebrew/etc/nginx/servers/bad.conf:1`.
+- `tail -n 20 …/error.log`: the last 20 lines of nginx's own log file; the same `[emerg] unknown directive` line appears there. (`tail -f` follows it live.)
+- `launchctl print gui/$(id -u)/homebrew.mxcl.nginx`: asks launchd directly about the service (`homebrew.mxcl.nginx` is its name); `state` and `last exit code` show whether it is running or why it stopped.
+- `rm …/bad.conf` + `nginx -t`: **fix** the cause, then the test says `syntax is ok` and `test is successful`.
+- `brew services restart nginx`: start it again.
+- `lsof -nP -iTCP:8081 -sTCP:LISTEN`: shows the program listening on port 8081 (nginx). This is the Mac's version of `ss -tulpn`.
 
-**Diagnosis notes to write:** Symptom: site down, `status` = failed. Evidence: journal shows `[emerg] unknown directive "broken_line"`. Cause: bad config line. Fix: remove the line, `nginx -t` OK, restart. Proof: `is-active` = active, port 80 listening.
-**Verify:** `systemctl status nginx` → `Active: active (running)`; `curl -I http://localhost` → `HTTP/1.1 200 OK`.
-(Mac: no systemd; use `brew services list`, `launchctl list | grep <name>` and `log show --last 10m`.)
+**Diagnosis notes to write:** Symptom: the site is down, and `brew services list` shows `error`. Evidence: `nginx -t` and `error.log` say `unknown directive "broken_line"`. Cause: a bad config line. Fix: remove it, `nginx -t` passes, restart. Proof: `brew services list` = `started`, port 8081 listening, `curl -I` = `200 OK`.
 
-**🧠 In simple words:** systemd runs services, `systemctl` asks it whether a service is running and starts/stops it, and `journalctl` shows what the service logged. We break nginx on purpose with a bad config line, see it fail in `status`, read the exact error in the logs, confirm it with `nginx -t`, fix it and prove it is back. In short: status → logs → test config → fix → restart → verify.
+**Verify:** `brew services list` → `nginx  started`; `curl -I http://localhost:8081` → `HTTP/1.1 200 OK`.
+
+**Clean up afterwards:** `brew services stop nginx` (and `brew uninstall nginx` if you don't need it).
+
+*(Linux version, if the exam asks for Linux: `systemctl status nginx` · `sudo systemctl restart nginx` · `journalctl -u nginx -n 30` · `sudo nginx -t` · `/var/log/nginx/error.log` · `ss -tulpn | grep :80` · `sudo systemctl enable nginx`.)*
+
+**🧠 In simple words:** On a Mac, launchd runs background services and `brew services` lets you start, stop and check them, like `systemctl` on Linux. We break nginx on purpose with a bad config line, see `error` in the service list, read the exact reason with `nginx -t` and the log file, fix it, and prove it is back with `lsof` and `curl`. In short: status → logs → test config → fix → restart → verify.
