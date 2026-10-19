@@ -1,6 +1,6 @@
-# Lab bank · all 57 labs, in session order
+# Lab ANSWERS · all 57 labs, in session order
 
-*Each lab: the question, then the commands/config to write, what each line does, how to verify, and a plain summary.*
+*Solve them first in [LAB_QUESTIONS.md](LAB_QUESTIONS.md). Each answer: the commands/config to write, what each line does, how to verify, and a plain summary.*
 
 
 ## Session 1 · DevOps intro & roadmap
@@ -2324,40 +2324,406 @@ crash.log
 
 ## Session 19 · Cloud & Terraform in action
 
-### Lab 1
-> Design a cloud network with a VPC/VNet, public and private subnets, route tables, and security rules. Submit a diagram and explain the traffic flow.
+Acronyms: VPC = Virtual Private Cloud (your own private network inside AWS, Amazon Web Services). CIDR = Classless Inter-Domain Routing (an IP range written like `10.0.0.0/16`). IGW = Internet Gateway. NAT = Network Address Translation. SG = Security Group (a firewall around a server). EC2 = Elastic Compute Cloud (AWS virtual machines). AMI = Amazon Machine Image (the operating-system image a VM boots from). AZ = Availability Zone (one data-centre location inside a region). Azure uses the names VNet and NSG (Network Security Group) for the same ideas.
 
-*(model answer being written)*
+### Lab 1 · Design a VPC with public and private subnets, route tables and security rules; draw it and explain the traffic flow
+**Answer (model diagram):**
+```
+                     Internet (users, admin laptop)
+                                 |
+                     [ Internet Gateway (IGW) ]
+                                 |
++---------------------- VPC 10.0.0.0/16 --------------------------+
+|                                                                 |
+|  PUBLIC subnet 10.0.1.0/24       PRIVATE subnet 10.0.2.0/24     |
+|  +-------------------------+     +-------------------------+    |
+|  | web server   [SG-web]   |---->| app / DB    [SG-app]    |    |
+|  | NAT gateway (Elastic IP)|<----| (no public IP)          |    |
+|  +-------------------------+     +-------------------------+    |
+|  Route table "public"            Route table "private"          |
+|   10.0.0.0/16 -> local            10.0.0.0/16 -> local          |
+|   0.0.0.0/0   -> IGW              0.0.0.0/0   -> NAT gateway    |
++-----------------------------------------------------------------+
+```
+**Security rules:**
+| Security group | Inbound allowed | Outbound |
+|---|---|---|
+| SG-web (public subnet) | TCP 80 and 443 from `0.0.0.0/0`. TCP 22 (SSH, Secure Shell) **only** from the admin's IP, e.g. `203.0.113.10/32` | all |
+| SG-app (private subnet) | app port 8080 **only** from SG-web (a security group is the source, not an IP range) | all (leaves through the NAT gateway) |
 
-### Lab 2
-> Use Terraform to provision a small cloud network and one low-cost compute resource in a sandbox account. Run plan before apply and destroy the lab resources afterward.
+**Traffic flow:**
+1. **User → web:** internet → IGW → public route table → web server. SG-web allows port 443.
+2. **Web → app:** web server → app on 8080 through the `local` route (traffic stays inside the VPC). SG-app allows it only because the source is SG-web.
+3. **Private server → internet (updates):** app → private route table `0.0.0.0/0` → NAT gateway in the public subnet → IGW → internet. Replies come back the same way.
+4. **Blocked:** the internet cannot start a connection to the private subnet (the servers have no public IP, and NAT only lets out connections that started inside). SSH from any IP except the admin `/32` is dropped by SG-web.
+- Security groups are *stateful*: reply traffic is allowed automatically. NACLs (Network Access Control Lists) are optional, *stateless* filters at the subnet level.
+- A subnet is "public" only because its route table sends `0.0.0.0/0` to an IGW.
 
-*(model answer being written)*
+**🧠 In simple words:** The VPC is your private network. The public subnet holds things the internet must reach, and the private subnet hides the app and database. Route tables decide where traffic goes (IGW for public, NAT for private outbound only), and security groups decide which ports are allowed. In short: public = route to IGW, private = route to NAT, and SGs open only the ports you need.
 
-### Lab 3
-> Configure a security group/firewall rule that permits only the required application port. Demonstrate that SSH/admin access is not open to the entire internet.
+### Lab 2 · Use Terraform to build a small VPC and one cheap VM in a sandbox account; plan before apply, then destroy
+**Answer (what to write in the exam):**
+```bash
+aws configure --profile sandbox        # keys are saved in ~/.aws, never in .tf files
+export AWS_PROFILE=sandbox
+terraform fmt && terraform init && terraform validate
+terraform plan -var="admin_cidr=203.0.113.10/32" -out=tfplan
+terraform apply tfplan                 # applies exactly the reviewed plan
+terraform output public_ip
+curl http://$(terraform output -raw public_ip)
+terraform destroy -var="admin_cidr=203.0.113.10/32"   # type yes
+```
+`main.tf`
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
 
-*(model answer being written)*
+provider "aws" {
+  region = var.region # credentials come from `aws configure` / env vars, never from this file
+}
 
+variable "region" {
+  type    = string
+  default = "ap-south-1"
+}
+
+variable "admin_cidr" {
+  type = string # e.g. "203.0.113.10/32"
+}
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+  tags       = { Name = "lab-vpc" }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags                    = { Name = "lab-public" }
+}
+
+resource "aws_subnet" "private" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.2.0/24"
+  tags       = { Name = "lab-private" }
+}
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_security_group" "web" {
+  name   = "lab-web-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.admin_cidr]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+data "aws_ami" "al2023" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023*-x86_64"]
+  }
+}
+
+resource "aws_instance" "web" {
+  ami                    = data.aws_ami.al2023.id
+  instance_type          = "t3.micro"
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.web.id]
+  tags                   = { Name = "lab-web" }
+  user_data              = <<-EOT
+    #!/bin/bash
+    dnf install -y nginx
+    systemctl enable --now nginx
+  EOT
+}
+
+output "public_ip" {
+  value = aws_instance.web.public_ip
+}
+```
+**What each line does:**
+- `provider "aws"`: chooses the region. Credentials come from `aws configure` or environment variables, so they are never written in code.
+- `aws_vpc` / `aws_subnet`: the network (`/16` = 65,536 addresses) and two `/24` slices (256 addresses each). `map_public_ip_on_launch` gives VMs in the public subnet a public IP.
+- `aws_internet_gateway` + `aws_route_table` (`0.0.0.0/0 → igw`) + `aws_route_table_association`: these three make the subnet public. The private subnet has no such route. (A NAT gateway is skipped in a sandbox because it is billed per hour.)
+- `aws_security_group`: allows 80 and 443 from anywhere, and SSH only from `var.admin_cidr`. `egress` allows all outbound traffic (Terraform removes AWS's default egress rule, so you must add it).
+- `data "aws_ami"`: looks up the newest Amazon Linux 2023 image. `t3.micro` is a free-tier-sized VM. `user_data` installs nginx (a web server) at first boot.
+- `plan -out=tfplan` then `apply tfplan`: review first, then apply exactly what you reviewed. `destroy` deletes everything in the state, so nothing keeps costing money.
+
+**Verify:** the plan ends with `Plan: 8 to add, 0 to change, 0 to destroy.`, apply with `Apply complete! Resources: 8 added`, `curl` returns the nginx welcome page, and destroy ends with `Destroy complete! Resources: 8 destroyed.`
+
+**🧠 In simple words:** One `main.tf` describes the whole network and the VM, so anyone can rebuild the same thing with one command. Planning first shows exactly what will be created, and destroy cleans up so the sandbox bill stays at zero. In short: write HCL → init → plan → apply → test → destroy, with credentials kept outside the code.
+
+### Lab 3 · Security group that allows only the app port; prove SSH is not open to the whole internet
+**Answer (what to write in the exam):**
+```bash
+MYIP=$(curl -s https://checkip.amazonaws.com)          # your public IP
+terraform plan  -var="admin_cidr=${MYIP}/32" -out=tfplan
+terraform apply tfplan
+aws ec2 describe-security-groups --filters Name=group-name,Values=lab-web-sg \
+  --query 'SecurityGroups[0].IpPermissions[].{port:FromPort,from:IpRanges[0].CidrIp}' --output table
+curl -I http://<public_ip>             # app port works from anywhere
+nc -zv -w 5 <public_ip> 22             # from YOUR IP: succeeded
+nc -zv -w 5 <public_ip> 22             # from another network (phone hotspot): timed out
+terraform plan -var="admin_cidr=0.0.0.0/0"   # rejected by the validation rule
+```
+Security rules in `main.tf`:
+```hcl
+variable "admin_cidr" {
+  description = "Your own public IP as /32, e.g. 203.0.113.10/32"
+  type        = string
+  validation {
+    condition     = endswith(var.admin_cidr, "/32")
+    error_message = "admin_cidr must be ONE IP (/32), never 0.0.0.0/0."
+  }
+}
+
+resource "aws_security_group" "web" {
+  name   = "lab-web-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    description = "SSH only from admin IP"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.admin_cidr]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+```
+**What each line does:**
+- Ingress on port 80 from `0.0.0.0/0`: the only public port, because it is the application port. Add a 443 block the same way if the app uses HTTPS.
+- Ingress on port 22 with `[var.admin_cidr]`: SSH is allowed from one IP only (`/32` = exactly one address). Every port not listed is denied by default.
+- `validation { … }`: Terraform refuses any value that is not a single `/32`, so `0.0.0.0/0` (the whole internet) can never be applied by mistake.
+- `describe-security-groups --query …`: prints the real rules that AWS stored, as evidence.
+- `nc -zv -w 5 host 22`: tries a TCP connection with a 5-second timeout. "succeeded" means open; "timed out" means blocked.
+
+**Verify:** the table shows `80 → 0.0.0.0/0` and `22 → <your IP>/32` (never `22 → 0.0.0.0/0`). `curl -I` → `HTTP/1.1 200 OK`. Port 22 from another network times out. The last plan fails with `Invalid value for variable … never 0.0.0.0/0`.
+
+**🧠 In simple words:** A security group is an allow-list: anything not listed is blocked. Opening only port 80 to everyone and port 22 to your single IP means attackers scanning the internet cannot even try to log in over SSH. In short: app port open to `0.0.0.0/0`, SSH only from `your-ip/32`, proven with `describe-security-groups` and a blocked `nc` test.
 
 ---
 
 ## Session 20 · Monitoring, Observability & GitOps
 
-### Lab 1
-> Expose application metrics and configure Prometheus to scrape them. Verify the target is healthy and identify at least two metrics.
+Acronyms: PromQL = Prometheus Query Language. RED = Rate, Errors, Duration (the three standard panels for any service). p95 = 95th percentile. CRD = Custom Resource Definition (a new object type added to Kubernetes, such as Argo CD's `Application`). UI = User Interface. CLI = Command-Line Interface.
 
-*(model answer being written)*
+### Lab 1 · Expose app metrics, make Prometheus scrape them, check the target is UP, name two metrics
+**Answer (what to write in the exam):**
+```bash
+python3 -m venv venv && . venv/bin/activate && pip install prometheus-client
+python3 app.py &                                     # metrics at :8000/metrics
+curl -s localhost:8000/metrics | grep http_requests_total
+docker run -d --name prometheus -p 9090:9090 \
+  --add-host=host.docker.internal:host-gateway \
+  -v "$(pwd)/prometheus.yml:/etc/prometheus/prometheus.yml" \
+  prom/prometheus
+# Browser: http://localhost:9090 → Status → Targets  (both jobs must show UP)
+curl -s 'localhost:9090/api/v1/query?query=up'
+```
+`app.py`
+```python
+from prometheus_client import Counter, Histogram, start_http_server
+import random, time
 
-### Lab 2
-> Create a Grafana dashboard with panels for request rate, errors, and latency, or use the metrics available in the supplied environment. Explain what each panel indicates.
+REQUESTS = Counter("http_requests_total", "Total HTTP requests", ["status"])
+LATENCY = Histogram("http_request_duration_seconds", "Request latency in seconds")
 
-*(model answer being written)*
+start_http_server(8000)          # serves http://localhost:8000/metrics
+while True:                      # fake traffic: one request at a time
+    with LATENCY.time():
+        time.sleep(random.random() / 5)
+    REQUESTS.labels(status=random.choice(["200", "200", "200", "500"])).inc()
+```
+`prometheus.yml`
+```yaml
+global:
+  scrape_interval: 15s
 
-### Lab 3
-> Configure a basic GitOps deployment using Argo CD or a supplied GitOps environment. Change the desired replica count in Git and verify reconciliation in the cluster.
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
 
-*(model answer being written)*
+  - job_name: myapp
+    scrape_interval: 5s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+```
+**What each line does:**
+- `Counter` / `Histogram`: the app records a request count (labelled by HTTP status) and the time each request took. `start_http_server(8000)` publishes these numbers as text at `/metrics`.
+- `scrape_configs`: the list of things Prometheus pulls metrics from. `job_name` is the label it gives them. `scrape_interval` sets how often it pulls (5s here; otherwise the global 15s). `static_configs.targets` lists the `host:port` to scrape.
+- `--add-host=host.docker.internal:host-gateway`: lets the Prometheus container reach the app running on the host machine (needed on Linux; Docker Desktop on Mac has it built in).
+- `-v …prometheus.yml:/etc/prometheus/prometheus.yml`: mounts your config file over the default one.
 
+**Verify:** Status → Targets shows `myapp` and `prometheus` with State **UP**. In the Graph tab, `up{job="myapp"}` → `1` (0 would mean the scrape failed).
+**Two or more metrics:**
+- `http_requests_total{status="200"}`: a counter of requests served (it only goes up).
+- `http_request_duration_seconds_bucket`: a latency histogram (used for p95).
+- `process_cpu_seconds_total{job="prometheus"}`: CPU (Central Processing Unit) seconds the process has used. (Mac: the Python app shows `process_*` metrics only on Linux, so read this one from the `prometheus` job.)
+
+**🧠 In simple words:** The app shows its numbers on a `/metrics` web page, and Prometheus visits that page every few seconds and stores each value with a timestamp. The Targets page and the `up` metric prove the scraping works. In short: expose `/metrics`, list it under `scrape_configs`, and check that Targets says UP.
+
+### Lab 2 · Grafana dashboard with request rate, error and latency panels; explain each panel
+**Answer (what to write in the exam):**
+```bash
+docker network create monitoring
+docker network connect monitoring prometheus
+docker run -d --name grafana --network monitoring -p 3000:3000 grafana/grafana
+# Browser: http://localhost:3000 (first login admin/admin, then set a new password)
+# Connections → Data sources → Add → Prometheus → URL http://prometheus:9090 → Save & test
+# Dashboards → New → Add visualization → Prometheus → paste PromQL → set unit → Apply
+# Repeat for the 3 panels below → Save dashboard ("App RED")
+```
+| Panel (Time series) | PromQL | Unit | What it indicates |
+|---|---|---|---|
+| Request rate | `sum(rate(http_requests_total[5m]))` | req/s | Traffic: how many requests per second the app is serving. |
+| Error rate | `sum(rate(http_requests_total{status=~"5.."}[5m]))` | req/s | Server errors (5xx) per second. It should stay near 0. |
+| Error % (optional) | `sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))` | percent (0.0-1.0) | The fraction of requests that fail. |
+| Latency p95 | `histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))` | seconds | 95% of requests finished faster than this value. Shows slowness that users feel. |
+
+**What each part means:**
+- `rate(x[5m])`: the per-second increase of a counter, averaged over the last 5 minutes (it handles counter resets).
+- `sum(...)`: adds all label series (all statuses or instances) into one line.
+- `{status=~"5.."}`: a regular-expression match, meaning any status from 500 to 599.
+- `sum by (le)`: keeps the histogram's `le` ("less than or equal") bucket label, which `histogram_quantile` needs to work out p95.
+- Data source URL `http://prometheus:9090`: both containers are on the `monitoring` network, so Grafana reaches Prometheus by its container name.
+- If the supplied environment has no app, use Prometheus's own metrics: `prometheus_http_requests_total` (its status label is `code`) and `prometheus_http_request_duration_seconds_bucket`.
+
+**Verify:** "Save & test" → `Successfully queried the Prometheus API.` With the app from Lab 1, the panels show about 10 req/s, about 25% errors and a p95 of about 0.2 s.
+
+**🧠 In simple words:** Grafana does not store data. It asks Prometheus with PromQL and draws the answers as graphs. Rate, errors and latency (RED) answer "how busy is it, how often does it fail, how slow is it", which is enough to spot most problems. In short: add Prometheus as a data source and build three panels: `rate()` for traffic, a `5..` filter for errors, and `histogram_quantile(0.95, …)` for latency.
+
+### Lab 3 · GitOps with Argo CD: change the replica count in Git and see the cluster reconcile
+**Answer (what to write in the exam):**
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl -n argocd rollout status deploy/argocd-server
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+kubectl -n argocd port-forward svc/argocd-server 8080:443 &        # UI: https://localhost:8080
+kubectl apply -f argocd-app.yaml                   # register the app with Argo CD
+kubectl get deploy web -n web                      # READY 2/2
+# In the Git repo, edit k8s/deployment.yaml: replicas: 2 -> 4
+git add k8s/deployment.yaml && git commit -m "Scale web to 4 replicas" && git push origin main
+argocd app get web                                 # or watch the UI
+kubectl get deploy web -n web                      # READY 4/4
+```
+`argocd-app.yaml`
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: web
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-user>/gitops-demo.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: web
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+`k8s/deployment.yaml` (in the Git repo)
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+```
+**What each line does:**
+- `apply --server-side`: installs Argo CD (its CRDs are too big for a normal client-side apply). The `argocd-initial-admin-secret` holds the first `admin` password.
+- `repoURL` / `targetRevision` / `path`: which Git repo, branch and folder hold the desired state. For a private repo, add a token under Settings → Repositories in the UI, never in this YAML.
+- `destination`: which cluster (`https://kubernetes.default.svc` = the cluster Argo CD runs in) and which namespace to deploy into. `CreateNamespace=true` creates `web` if it is missing.
+- `automated`: sync automatically when Git changes. `prune: true` deletes objects that were removed from Git. `selfHeal: true` undoes manual changes made in the cluster (drift).
+- `git commit` + `push`: the only way to change the app. Argo CD polls Git about every 3 minutes (run `argocd app sync web` or click Refresh to sync sooner).
+
+**Verify:** `argocd app get web` → `Sync Status: Synced to main (<commit>)`, `Health Status: Healthy`, and the UI shows the app green with **Synced + Healthy**. `kubectl get deploy web -n web` → `READY 4/4`. Drift test: `kubectl scale deploy web -n web --replicas=1` → selfHeal sets it back to 4 within seconds.
+
+**🧠 In simple words:** In GitOps, Git holds the desired state and Argo CD keeps comparing the cluster with Git, fixing any difference. You never run `kubectl apply` for the app yourself: you change a YAML file, commit and push, and Argo CD rolls it out. In short: Application YAML points Argo CD at a repo folder; edit `replicas` → commit → push → Argo CD syncs → `kubectl get deploy` shows the new count.
 
 ---
