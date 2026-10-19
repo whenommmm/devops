@@ -35,7 +35,7 @@
 | B6 | HPA | WEAK (fast): % of request, ceil, clamp to max, 5-min scale-down | Fast quiz Q5 not attempted (explained) | Oct 18 | final flash |
 | B6 | Scheduling: nodeSelector, affinity, taints/tolerations | NOT STARTED | – | – | – |
 | B6 | Security: ServiceAccounts, RBAC | NOT STARTED | – | – | – |
-| B6 | K8s troubleshooting (Pending, CrashLoopBackOff, ImagePullBackOff, selectors, ports, probes) | NOT STARTED | – | – | – |
+| B6 | K8s troubleshooting (Pending, CrashLoopBackOff, ImagePullBackOff, selectors, ports, probes) | UNDERSTOOD (fast) | Fast quiz 5/5 (logs --previous, CreateContainerConfigError, ngnix typo, requests vs use, 127.0.0.1) | Oct 19 | – |
 | B7 | Helm | NOT STARTED | – | – | – |
 | B7 | CI/CD concepts & deployment strategies | NOT STARTED | – | – | – |
 | B7 | GitHub Actions workflow YAML | NOT STARTED | – | – | – |
@@ -228,3 +228,4 @@
 | – | Oct 7–10 | – | **Lost days** (usage limit). Tools were installed meanwhile: Colima, docker, compose, minikube, kubectl, helm, terraform | Plan rebuilt as v4 |
 | D5 | "Oct 11" | Git + Docker I | Git (answered in chat, practical pending) · Docker I rewritten at zero-knowledge level, answered + unbiased re-test 3/4 · Docker II/III session files written | – |
 - **Oct 18 (exam eve, fast track):** 09 fast quiz 2/5 (Q2 ✓ Q4 ✓; Q1 ✗ emptyDir, Q3 ✗ startup probe, Q5 explained).
+- **Oct 19 (exam day):** 10 fast quiz **5/5** (incl. the 127.0.0.1 trap, first time correct).
