@@ -61,3 +61,76 @@ curl http://localhost:9080
 | Shell-form `CMD python app.py` | Works, but `docker stop` waits 10 s; prefer exec form `["python","app.py"]` |
 | Smaller image | `-slim`/`alpine`, `--no-cache-dir`, multi-stage, `.dockerignore` |
 | ENV vs ARG | ENV stays in the image; ARG only during the build |
+
+---
+
+# Likely exam questions about Dockerfiles, with answers
+
+## 1. MCQs from the question bank (certain)
+| Question | Answer |
+|---|---|
+| Which command builds an image from a Dockerfile? | **docker build** |
+| Which instruction sets the base image? | **FROM** |
+| Which instruction copies files into an image? | **COPY** |
+| What is the purpose of .dockerignore? | **Exclude paths from the build context** |
+| Which instruction defines a default command? | **CMD** |
+
+## 2. Differences (short answers)
+- **RUN vs CMD:** RUN executes once while the image is built and saves the result (e.g. installing packages), whereas CMD is the command run each time a container starts.
+- **CMD vs ENTRYPOINT:** CMD is a default that `docker run` arguments replace, whereas ENTRYPOINT is the fixed main command and arguments are added to it.
+- **COPY vs ADD:** COPY only copies local files; ADD can also fetch URLs and unpack `.tar` files. Prefer COPY.
+- **ENV vs ARG:** ENV stays in the image and is visible to the app; ARG exists only during the build (`--build-arg`).
+- **EXPOSE:** only documents the port; `-p host:container` actually publishes it.
+- **Layers / cache:** each instruction is a cached layer; copy `requirements.txt` and install before `COPY . .` so code edits don't re-run the install.
+- **Multi-stage build:** several `FROM` stages; build with full tools, then copy only the output into a small final image → smaller, safer image.
+- **Smaller images:** slim/alpine base, multi-stage, `.dockerignore`, `--no-cache-dir`, combine `RUN`s.
+- **USER:** run as a non-root user (least privilege).
+
+## 3. Writing tasks
+HTML page: see Template A above. With ENV + .dockerignore:
+```dockerfile
+FROM nginx:alpine
+WORKDIR /usr/share/nginx/html
+ENV APP_VERSION=1.0
+COPY . .
+CMD ["nginx", "-g", "daemon off;"]
+```
+Multi-stage:
+```dockerfile
+FROM node:20 AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+```
+
+## 4. Find the bug
+| Symptom / line | Fix |
+|---|---|
+| `COPY` before `FROM` | `FROM` must be first |
+| `RUN python app.py` as last line | Use `CMD ["python", "app.py"]` (RUN is build-time) |
+| `EXPOSE 5000`, no `-p`, curl fails | `docker run -p 8080:5000 …` |
+| App listens on 127.0.0.1 | Listen on `0.0.0.0` |
+| pip install re-runs on every code edit | Copy requirements + install before `COPY . .` |
+| `.env` ends up in the image | Add `.env` to `.dockerignore`; never put secrets in `ENV` |
+| `docker stop` takes 10 s | Exec form `CMD ["python", "app.py"]` |
+| `COPY requirements.txt .` file not found | Not in the build context or listed in `.dockerignore` |
+
+## 5. Predict the output
+- `ENTRYPOINT ["echo","hi"]` + `docker run img there` → **hi there**
+- `ENTRYPOINT ["ping"]` + `CMD ["localhost"]` + `docker run img google.com` → **ping google.com**
+- `CMD ["echo","hello"]` + `docker run img date` → runs **date**
+- Edit `app.py` with `COPY . .` before the install → **`COPY . .` and every later step rebuild**
+
+## 6. Write the command
+| Task | Command |
+|---|---|
+| Build `web:1.0` from this folder | `docker build -t web:1.0 .` |
+| Build with an argument | `docker build --build-arg VERSION=2.0 -t web:2.0 .` |
+| Show the layers | `docker history web:1.0` |
+| Override ENV at run time | `docker run -e APP_ENV=dev web:1.0` |
+| Run another command instead of CMD | `docker run web:1.0 sh` (`--entrypoint sh` replaces ENTRYPOINT) |
