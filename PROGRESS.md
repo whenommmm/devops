@@ -86,7 +86,7 @@
 | **Protocols: HTTP/HTTPS/SSH run over TCP; DNS mostly UDP (port 53)** | Oct 6 | 1 (Net quiz Q4, hedged B/D) | Oct 13 warm-up | 1 (Git W3 ✓, Oct 11) |
 | A PR tracks a branch: push new commits to the same branch to address review comments | Oct 11 | 1 (Git Q3, hedged A/D) | Oct 12 warm-up | 0 |
 | Resolving a conflict: edit + remove markers → `git add` (marks resolved) → `git commit` | Oct 11 | 1 (L2 ½, missed add/commit) | Oct 12 warm-up | 0 |
-| **127.0.0.1 = same machine only; listen on 0.0.0.0 to accept outside connections** (in K8s: an app on 127.0.0.1 = only its own Pod, even with endpoints listed) | Oct 6 | **3** (26.3 ½, Net quiz Q2, K8s III Q1) | Oct 17 warm-up | 0 |
+| **127.0.0.1 = same machine only; listen on 0.0.0.0 to accept outside connections** (in K8s: an app on 127.0.0.1 = only its own Pod, even with endpoints listed) | Oct 6 | **3** (26.3 ½, Net quiz Q2, K8s III Q1) | final flash | 1 (10 fast Q5 ✓, Oct 19) |
 | Short DNS names resolve in the Pod's OWN namespace; other namespaces need `svc.namespace` | Oct 16 | 1 (57.1 guess) | Oct 17 warm-up | 0 |
 | **emptyDir lives with the POD: survives a container restart, deleted when the Pod is deleted (only a PVC survives the Pod)** | Oct 18 | 1 (09 fast Q1) | final flash | 0 |
 | **Startup probe runs only at the beginning; checks on external things (DB) go in READINESS, never liveness** | Oct 18 | 1 (09 fast Q3) | final flash | 0 |
