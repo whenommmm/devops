@@ -45,8 +45,8 @@
 | B8 | IaC concepts | NOT STARTED | – | – | – |
 | B8 | Terraform (HCL, init/plan/apply, state) | NOT STARTED | – | – | – |
 | B8 | Cloud basics + Terraform on cloud | NOT STARTED | – | – | – |
-| B8 | Monitoring (Prometheus, Grafana) | NOT STARTED | – | – | – |
-| B8 | Observability (metrics/logs/traces, SLI/SLO/SLA) | NOT STARTED | – | – | – |
+| B8 | Monitoring (Prometheus, Grafana) | WEAK (fast): `up` = scrape success; Grafana queries live, stores nothing | 14 fast Q2 ✗ (A), Q3 ½ | Oct 19 | final flash |
+| B8 | Observability (metrics/logs/traces, SLI/SLO/SLA) | WEAK (fast): error budget from SLO, refunds from SLA | 14 fast Q1 ✗ (A) | Oct 19 | final flash |
 | B8 | Final DevOps project (full lifecycle) | NOT STARTED | – | – | – |
 | B8 | Cross-syllabus troubleshooting | NOT STARTED | – | – | – |
 
