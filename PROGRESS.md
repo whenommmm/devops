@@ -41,7 +41,7 @@
 | B7 | GitHub Actions workflow YAML | WEAK (fast): jobs don't share files (artifacts), skipped steps after failure, silent vs 'Invalid workflow file' | 12 fast Q2 explained, Q3 ✗ (B), Q4 ✗ (D) | Oct 19 | final flash |
 | B7 | Complete CI/CD pipeline | WEAK (fast): image name must be lowercase before ':'; `set image` exits 0, `rollout status` decides | 13 fast Q1 ✗ (A), Q2 ✗ (hedged A/D) | Oct 19 | final flash |
 | B7 | DevSecOps (SAST/DAST/SCA, scanning) | UNDERSTOOD (fast) | 13 fast Q3 ✓ (SCA transitive), Q4 ✓ (Trivy gate + pipe), Q5 ✓ (revoke first) | Oct 19 | – |
-| B7 | GitOps (ArgoCD, push vs pull) | NOT STARTED | – | – | – |
+| B7 | GitOps (ArgoCD, push vs pull) | WEAK (fast): selfHeal reverts kubectl fixes; Argo CD never builds images | 14 fast Q4 idk, Q5 ✗ (B) | Oct 19 | final flash |
 | B8 | IaC concepts | NOT STARTED | – | – | – |
 | B8 | Terraform (HCL, init/plan/apply, state) | NOT STARTED | – | – | – |
 | B8 | Cloud basics + Terraform on cloud | NOT STARTED | – | – | – |
@@ -99,6 +99,9 @@
 | **No run at all = wrong folder / branch / trigger (workflow_dispatch); red 'Invalid workflow file' = broken structure (no runs-on)** | Oct 19 | 1 (12 fast Q4) | final flash | 0 |
 | **`kubectl set image` exits 0 (only submits); `kubectl rollout status --timeout` exits 1 on failure: it's the real gate** | Oct 19 | 1 (13 fast Q2, hedged) | final flash | 0 |
 | **Docker image NAME (before ':') must be lowercase; `${{ github.repository }}` keeps capitals → `${GITHUB_REPOSITORY,,}`** | Oct 19 | 1 (13 fast Q1) | final flash | 0 |
+| **Error budget = from the SLO (100% − SLO) × 43,200 min/30 days; refunds only if the SLA is broken** | Oct 19 | 1 (14 fast Q1) | final flash | 0 |
+| **`up` = did Prometheus's scrape of /metrics succeed (not user health); Alertmanager only notifies; Grafana stores nothing, queries live** | Oct 19 | 2 (14 fast Q2, Q3 ½) | final flash | 0 |
+| **Argo CD: Sync (matches Git?) vs Health (running OK?); selfHeal reverts manual kubectl changes; fix in Git; Argo never builds images** | Oct 19 | 2 (14 fast Q4, Q5) | final flash | 0 |
 | minikube (docker driver) node IP isn't reachable from the Mac → use port-forward / `minikube service --url`; tunnel is for LoadBalancer/Ingress | Oct 16 | 1 (55.2) | Oct 18 | 0 |
 | Headless Service (clusterIP: None): no virtual IP, kube-proxy writes no rules, DNS returns Pod IPs | Oct 16 | 1 (Q4) | Oct 18 | 0 |
 | FQDN = Fully Qualified Domain Name; format `<svc>.<ns>.svc.cluster.local` | Oct 16 | 1 (L2 ½) | Oct 17 warm-up | 0 |
@@ -240,3 +243,4 @@
 - **Oct 19:** 11 fast quiz 1/5 (Helm precedence and memory rules weak).
 - **Oct 19:** 12 fast quiz 2/5 (GitHub Actions job/step behaviour weak).
 - **Oct 19:** 13 fast quiz 3/5 (security strong; deploy-step exit codes and image naming weak).
+- **Oct 19:** 14 fast quiz ½/5 (monitoring/GitOps weakest; all five items in the weak queue).
