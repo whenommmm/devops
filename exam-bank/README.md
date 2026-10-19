@@ -5,6 +5,7 @@ The files, in session order 1 → 20:
 | File | What's inside |
 |---|---|
 | [MCQ_SPEEDRUN.md](MCQ_SPEEDRUN.md) | All 190 MCQs as one line each: question → answer (fastest revision) |
+| [MCQ_PRACTICE.md](MCQ_PRACTICE.md) | Quiz mode: each session's 10 questions, then its answers (hidden until you click) |
 | [MCQ_BANK.md](MCQ_BANK.md) | All 190 MCQs: question, options, then ✅ the answer and 💡 a one-line explanation |
 | [LAB_QUESTIONS.md](LAB_QUESTIONS.md) | All 57 lab questions, grouped by session, each with an empty box to write your answer |
 | [LAB_ANSWERS.md](LAB_ANSWERS.md) | Model answers for all 57 labs: commands/config, what each line does, how to verify, plain summary |
